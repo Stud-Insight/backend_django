@@ -1,0 +1,90 @@
+volumes:
+  backend_django_local_postgres_data: {}
+  backend_django_local_postgres_data_backups: {}
+  backend_django_local_minio_data: {}
+  backend_django_local_redis_data: {}
+  
+
+services:
+  django:
+    build:
+      context: .
+      dockerfile: ./compose/local/django/Dockerfile
+    image: backend_django_local_django
+    container_name: backend_django_local_django
+    depends_on:
+      - postgres
+      - redis
+      - mailpit
+      - minio
+    volumes:
+      - /app/.venv
+      - .:/app:z
+    env_file:
+      - ./.envs/.local/.django
+      - ./.envs/.local/.postgres
+    ports:
+      - '8000:8000'
+    command: /start
+
+  postgres:
+    build:
+      context: .
+      dockerfile: ./compose/production/postgres/Dockerfile
+    image: backend_django_production_postgres
+    container_name: backend_django_local_postgres
+    volumes:
+      - backend_django_local_postgres_data:/var/lib/postgresql/18/docker
+      - backend_django_local_postgres_data_backups:/backups
+    env_file:
+      - ./.envs/.local/.postgres
+
+  redis:
+    image: redis:7-alpine
+    container_name: backend_django_local_redis
+    volumes:
+      - backend_django_local_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mailpit:
+    image: docker.io/axllent/mailpit:latest
+    container_name: backend_django_local_mailpit
+    ports:
+      - "8025:8025"
+
+  minio:
+    image: minio/minio:latest
+    container_name: backend_django_local_minio
+    volumes:
+      - backend_django_local_minio_data:/data
+    env_file:
+      - ./.envs/.local/.minio
+    ports:
+      - "9000:9000"   # API S3
+      - "9001:9001"   # Console web
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: backend_django_local_minio_init
+    depends_on:
+      minio:
+        condition: service_healthy
+    env_file:
+      - ./.envs/.local/.minio
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set myminio http://minio:9000 \$MINIO_ROOT_USER \$MINIO_ROOT_PASSWORD;
+      mc mb myminio/\$MINIO_BUCKET_NAME --ignore-existing;
+      mc anonymous set download myminio/\$MINIO_BUCKET_NAME/public;
+      exit 0;
+      "
