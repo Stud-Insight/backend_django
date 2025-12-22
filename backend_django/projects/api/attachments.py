@@ -4,8 +4,13 @@ Attachments and academic projects API controller.
 
 from uuid import UUID
 
+import boto3
+from botocore.config import Config
+from django.conf import settings
 from django.db.models import Q
+from django.http import FileResponse
 from django.http import HttpRequest
+from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from ninja import File
 from ninja import UploadedFile
@@ -160,6 +165,54 @@ class AttachmentsController(BaseAPI):
             created=attachment.created,
         )
 
+    @http_get(
+        "/{attachment_id}/download",
+        response={401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="attachments_download",
+    )
+    def download_attachment(self, request: HttpRequest, attachment_id: UUID):
+        """Download an attachment file."""
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        attachment = get_object_or_404(Attachment, id=attachment_id)
+
+        if not attachment.can_be_viewed_by(request.user):
+            return PermissionDeniedError().to_response()
+
+        # If S3/MinIO with public URL configured, redirect to signed URL
+        public_url = getattr(settings, "AWS_S3_PUBLIC_URL", None)
+        if getattr(settings, "USE_S3_STORAGE", False) and public_url:
+            # Create S3 client with public endpoint for URL generation
+            s3_client = boto3.client(
+                "s3",
+                endpoint_url=public_url,
+                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+                region_name=getattr(settings, "AWS_S3_REGION_NAME", "us-east-1"),
+                config=Config(signature_version="s3v4"),
+            )
+
+            # Generate presigned URL
+            signed_url = s3_client.generate_presigned_url(
+                "get_object",
+                Params={
+                    "Bucket": settings.AWS_STORAGE_BUCKET_NAME,
+                    "Key": attachment.file.name,
+                    "ResponseContentDisposition": f'attachment; filename="{attachment.original_filename}"',
+                },
+                ExpiresIn=3600,  # 1 hour
+            )
+            return HttpResponseRedirect(signed_url)
+
+        # Fallback: stream the file directly
+        return FileResponse(
+            attachment.file.open("rb"),
+            as_attachment=True,
+            filename=attachment.original_filename,
+            content_type=attachment.content_type,
+        )
+
     @http_delete(
         "/{attachment_id}",
         response={200: dict, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
@@ -179,3 +232,56 @@ class AttachmentsController(BaseAPI):
         attachment.delete()
 
         return {"success": True, "message": "Fichier supprimé avec succès."}
+
+    @http_get(
+        "/",
+        response={200: list[AttachmentSchema], 401: ErrorSchema},
+        url_name="attachments_list",
+    )
+    def list_attachments(self, request: HttpRequest):
+        """List all attachments owned by the current user."""
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        attachments = Attachment.objects.filter(owner=request.user).order_by("-created")
+
+        return 200, [
+            AttachmentSchema(
+                id=a.id,
+                original_filename=a.original_filename,
+                content_type=a.content_type,
+                size=a.size,
+                created=a.created,
+            )
+            for a in attachments
+        ]
+
+    @http_post(
+        "/projects/{project_id}/attach/{attachment_id}",
+        response={200: dict, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="projects_attach_file",
+    )
+    def attach_file_to_project(self, request: HttpRequest, project_id: UUID, attachment_id: UUID):
+        """Attach a file to an academic project."""
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        project = get_object_or_404(AcademicProject, id=project_id)
+        attachment = get_object_or_404(Attachment, id=attachment_id)
+
+        # Check if user has access to the project
+        if not (
+            project.student_id == request.user.id
+            or project.referent_id == request.user.id
+            or project.supervisor_id == request.user.id
+            or request.user.is_staff
+        ):
+            return PermissionDeniedError().to_response()
+
+        # Check if user owns the attachment
+        if attachment.owner_id != request.user.id and not request.user.is_staff:
+            return NotOwnerError("Vous n'êtes pas le propriétaire de ce fichier.").to_response()
+
+        project.files.add(attachment)
+
+        return {"success": True, "message": "Fichier associé au projet avec succès."}
