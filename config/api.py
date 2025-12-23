@@ -50,6 +50,7 @@ def register_controllers_from_module(api_instance: NinjaExtraAPI, module_path: s
 LOCAL_APPS = [
     "backend_django.users",
     "backend_django.projects",
+    "backend_django.chat",
 ]
 
 for app in LOCAL_APPS:
