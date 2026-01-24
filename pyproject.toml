@@ -187,4 +187,14 @@ dependencies = [
     # S3/MinIO storage
     "django-storages[s3]==1.14.4",
     "boto3==1.35.99",
+    # Celery async task processing
+    "celery>=5.6.2",
+    "django-celery-beat==2.8.1",
+    "kombu>=5.6.0",  # Celery dependency
+    # State machine for workflow states
+    "django-fsm-2==3.0.0",
+    # Stable marriage algorithm for TER assignment
+    "matching==1.4.3",
+    # Audit logging
+    "django-auditlog==3.0.0",
 ]

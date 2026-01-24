@@ -82,6 +82,7 @@ THIRD_PARTY_APPS = [
     "storages",
     "ninja",
     "ninja_extra",
+    "django_celery_beat",
 ]
 
 LOCAL_APPS = [
@@ -333,6 +334,11 @@ if USE_S3_STORAGE:
     AWS_S3_SIGNATURE_VERSION = "s3v4"
     AWS_QUERYSTRING_AUTH = True  # Signed URLs for private files
     AWS_QUERYSTRING_EXPIRE = 3600  # 1 hour
+
+    # Server-Side Encryption (SSE-KMS) for MinIO
+    # All uploaded files will be automatically encrypted at rest
+    AWS_S3_ENCRYPTION = "aws:kms"  # Enable SSE-KMS encryption
+    AWS_S3_KMS_KEY_ID = "mykey"  # KMS key alias (matches MINIO_KMS_SECRET_KEY)
 
     # Use S3 for media files
     STORAGES = {
