@@ -24,6 +24,10 @@ from backend_django.users.schemas.auth import ResendActivationSchema
 from backend_django.users.schemas.auth import SignupResponseSchema
 from backend_django.users.schemas.auth import SignupSchema
 from backend_django.users.schemas.auth import UserSchema
+from backend_django.users.schemas.rgpd import RGPDDeleteRequestSchema
+from backend_django.users.schemas.rgpd import RGPDDeleteResponseSchema
+from backend_django.users.schemas.rgpd import RGPDExportRequestResponseSchema
+from backend_django.users.schemas.rgpd import RGPDExportResponseSchema
 
 __all__ = [
     # Auth schemas
@@ -51,4 +55,9 @@ __all__ = [
     "RoleSchema",
     "RoleListSchema",
     "SetUserRoleSchema",
+    # RGPD schemas
+    "RGPDExportResponseSchema",
+    "RGPDExportRequestResponseSchema",
+    "RGPDDeleteRequestSchema",
+    "RGPDDeleteResponseSchema",
 ]
