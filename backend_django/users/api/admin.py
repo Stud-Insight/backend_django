@@ -23,8 +23,14 @@ from backend_django.core.exceptions import AlreadyExistsError
 from backend_django.core.exceptions import ErrorSchema
 from backend_django.core.exceptions import NotFoundError
 from backend_django.core.exceptions import PermissionDeniedError
+from backend_django.core.exceptions import ValidationError
+from backend_django.core.roles import Role
+from backend_django.core.roles import ROLE_DESCRIPTIONS
 from backend_django.users.models import User
 from backend_django.users.schemas import MessageSchema
+from backend_django.users.schemas import RoleListSchema
+from backend_django.users.schemas import RoleSchema
+from backend_django.users.schemas import SetUserRoleSchema
 from backend_django.users.schemas import UserCreateSchema
 from backend_django.users.schemas import UserDetailSchema
 from backend_django.users.schemas import UserListSchema
@@ -60,24 +66,23 @@ class UserAdminController(BaseAPI):
         return 200, [UserListSchema.from_user(user) for user in users]
 
     @http_get(
-        "/{user_id}",
-        response={200: UserDetailSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
-        url_name="users_detail",
+        "/roles",
+        response={200: RoleListSchema, 401: ErrorSchema, 403: ErrorSchema},
+        url_name="users_roles_list",
     )
-    def get_user(self, request: HttpRequest, user_id: UUID):
-        """Get user details by ID. Requires staff permissions."""
+    def list_roles(self, request: HttpRequest):
+        """List all available roles. Requires staff permissions."""
         if not request.user.is_authenticated:
             return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
 
         if not request.user.is_staff:
             return PermissionDeniedError("Permission staff requise.").to_response()
 
-        try:
-            user = User.objects.prefetch_related("groups__permissions").get(id=user_id)
-        except User.DoesNotExist:
-            return NotFoundError("Utilisateur introuvable.").to_response()
-
-        return 200, UserListSchema.from_user(user)
+        roles = [
+            RoleSchema(name=role.value, description=ROLE_DESCRIPTIONS[role])
+            for role in Role
+        ]
+        return 200, RoleListSchema(roles=roles)
 
     @http_post(
         "/create",
@@ -126,6 +131,26 @@ class UserAdminController(BaseAPI):
             logger.exception("Failed to send activation email for new user")
 
         return 201, UserListSchema.from_user(user)
+
+    @http_get(
+        "/{user_id}",
+        response={200: UserDetailSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="users_detail",
+    )
+    def get_user(self, request: HttpRequest, user_id: UUID):
+        """Get user details by ID. Requires staff permissions."""
+        if not request.user.is_authenticated:
+            return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
+
+        if not request.user.is_staff:
+            return PermissionDeniedError("Permission staff requise.").to_response()
+
+        try:
+            user = User.objects.prefetch_related("groups__permissions").get(id=user_id)
+        except User.DoesNotExist:
+            return NotFoundError("Utilisateur introuvable.").to_response()
+
+        return 200, UserListSchema.from_user(user)
 
     @http_put(
         "/{user_id}",
@@ -231,3 +256,141 @@ class UserAdminController(BaseAPI):
             )
 
         return 200, MessageSchema(success=True, message="Email d'activation envoyé.")
+
+    @http_put(
+        "/{user_id}/roles",
+        response={200: UserDetailSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="users_set_roles",
+    )
+    def set_user_roles(self, request: HttpRequest, user_id: UUID, data: SetUserRoleSchema):
+        """
+        Set a user's roles. Replaces all existing roles.
+
+        Requires staff permissions. Only superusers can assign Admin role.
+        """
+        if not request.user.is_authenticated:
+            return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
+
+        if not request.user.is_staff:
+            return PermissionDeniedError("Permission staff requise.").to_response()
+
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return NotFoundError("Utilisateur introuvable.").to_response()
+
+        # Validate role names
+        valid_roles = Role.values()
+        invalid_roles = [r for r in data.roles if r not in valid_roles]
+        if invalid_roles:
+            return ValidationError(
+                message=f"Rôles invalides: {', '.join(invalid_roles)}",
+                details={"invalid_roles": invalid_roles, "valid_roles": valid_roles},
+            ).to_response()
+
+        # Only superusers can assign Admin role
+        if Role.ADMIN.value in data.roles and not request.user.is_superuser:
+            return 403, ErrorSchema(
+                code="CANNOT_ASSIGN_ADMIN",
+                message="Seul un superutilisateur peut assigner le rôle Admin.",
+            )
+
+        # Clear existing role groups and assign new ones
+        role_groups = Group.objects.filter(name__in=valid_roles)
+        user.groups.remove(*role_groups)
+
+        for role_name in data.roles:
+            try:
+                group = Group.objects.get(name=role_name)
+                user.groups.add(group)
+            except Group.DoesNotExist:
+                logger.warning(f"Role group not found: {role_name}")
+
+        return 200, UserListSchema.from_user(user)
+
+    @http_post(
+        "/{user_id}/roles/add",
+        response={200: UserDetailSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="users_add_role",
+    )
+    def add_user_role(self, request: HttpRequest, user_id: UUID, data: SetUserRoleSchema):
+        """
+        Add role(s) to a user without removing existing roles.
+
+        Requires staff permissions. Only superusers can assign Admin role.
+        """
+        if not request.user.is_authenticated:
+            return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
+
+        if not request.user.is_staff:
+            return PermissionDeniedError("Permission staff requise.").to_response()
+
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return NotFoundError("Utilisateur introuvable.").to_response()
+
+        # Validate role names
+        valid_roles = Role.values()
+        invalid_roles = [r for r in data.roles if r not in valid_roles]
+        if invalid_roles:
+            return ValidationError(
+                message=f"Rôles invalides: {', '.join(invalid_roles)}",
+                details={"invalid_roles": invalid_roles, "valid_roles": valid_roles},
+            ).to_response()
+
+        # Only superusers can assign Admin role
+        if Role.ADMIN.value in data.roles and not request.user.is_superuser:
+            return 403, ErrorSchema(
+                code="CANNOT_ASSIGN_ADMIN",
+                message="Seul un superutilisateur peut assigner le rôle Admin.",
+            )
+
+        for role_name in data.roles:
+            try:
+                group = Group.objects.get(name=role_name)
+                user.groups.add(group)
+            except Group.DoesNotExist:
+                logger.warning(f"Role group not found: {role_name}")
+
+        return 200, UserListSchema.from_user(user)
+
+    @http_post(
+        "/{user_id}/roles/remove",
+        response={200: UserDetailSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="users_remove_role",
+    )
+    def remove_user_role(self, request: HttpRequest, user_id: UUID, data: SetUserRoleSchema):
+        """
+        Remove role(s) from a user.
+
+        Requires staff permissions.
+        """
+        if not request.user.is_authenticated:
+            return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
+
+        if not request.user.is_staff:
+            return PermissionDeniedError("Permission staff requise.").to_response()
+
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return NotFoundError("Utilisateur introuvable.").to_response()
+
+        # Validate role names
+        valid_roles = Role.values()
+        invalid_roles = [r for r in data.roles if r not in valid_roles]
+        if invalid_roles:
+            return ValidationError(
+                message=f"Rôles invalides: {', '.join(invalid_roles)}",
+                details={"invalid_roles": invalid_roles, "valid_roles": valid_roles},
+            ).to_response()
+
+        for role_name in data.roles:
+            try:
+                group = Group.objects.get(name=role_name)
+                user.groups.remove(group)
+            except Group.DoesNotExist:
+                pass
+
+        return 200, UserListSchema.from_user(user)

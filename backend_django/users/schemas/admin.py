@@ -18,7 +18,7 @@ class UserCreateSchema(Schema):
     email: str
     first_name: str
     last_name: str = ""
-    groups: list[str] = []  # Group names
+    groups: list[str] = []  # Group names (roles)
 
 
 class UserUpdateSchema(Schema):
@@ -27,7 +27,26 @@ class UserUpdateSchema(Schema):
     first_name: str | None = None
     last_name: str | None = None
     is_active: bool | None = None
-    groups: list[str] | None = None
+    groups: list[str] | None = None  # Group names (roles)
+
+
+class SetUserRoleSchema(Schema):
+    """Schema for setting a user's role(s)."""
+
+    roles: list[str]  # Role names to assign
+
+
+class RoleSchema(Schema):
+    """Schema for role information."""
+
+    name: str
+    description: str
+
+
+class RoleListSchema(Schema):
+    """Schema for listing available roles."""
+
+    roles: list[RoleSchema]
 
 
 class GroupDetailSchema(Schema):

@@ -2,6 +2,9 @@
 User schemas for API requests and responses.
 """
 
+from backend_django.users.schemas.admin import RoleListSchema
+from backend_django.users.schemas.admin import RoleSchema
+from backend_django.users.schemas.admin import SetUserRoleSchema
 from backend_django.users.schemas.admin import UserCreateSchema
 from backend_django.users.schemas.admin import UserDetailSchema
 from backend_django.users.schemas.admin import UserListSchema
@@ -44,4 +47,8 @@ __all__ = [
     "UserUpdateSchema",
     "UserListSchema",
     "UserDetailSchema",
+    # Role schemas
+    "RoleSchema",
+    "RoleListSchema",
+    "SetUserRoleSchema",
 ]
