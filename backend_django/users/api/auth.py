@@ -73,7 +73,7 @@ class AuthController(BaseAPI):
         if not data.email or not data.password:
             return BadRequestError("Email et mot de passe requis.").to_response()
 
-        user = authenticate(request, email=data.email, password=data.password)
+        user = authenticate(request, username=data.email, password=data.password)
 
         if user is None:
             return InvalidCredentialsError().to_response()

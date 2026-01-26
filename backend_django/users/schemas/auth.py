@@ -14,15 +14,11 @@ if TYPE_CHECKING:
 
 
 class LoginSchema(Schema):
-    """Login request schema."""
-
     email: EmailStr
     password: str
 
 
 class SignupSchema(Schema):
-    """Signup request schema."""
-
     email: EmailStr
     first_name: str
     last_name: str = ""
@@ -47,20 +43,14 @@ class SignupSchema(Schema):
 
 
 class EmailVerifySchema(Schema):
-    """Email verification schema."""
-
     key: str
 
 
 class PasswordResetRequestSchema(Schema):
-    """Password reset request schema."""
-
     email: EmailStr
 
 
 class PasswordResetConfirmSchema(Schema):
-    """Password reset confirmation schema."""
-
     uid: str
     token: str
     new_password: str
@@ -76,21 +66,15 @@ class PasswordResetConfirmSchema(Schema):
 
 
 class ResendActivationSchema(Schema):
-    """Resend activation email schema."""
-
     email: EmailStr
 
 
 class GroupSchema(Schema):
-    """Group with permissions schema."""
-
     name: str
     permissions: list[str]
 
 
 class UserSchema(Schema):
-    """User response schema - matches frontend interface."""
-
     id: UUID
     first_name: str
     last_name: str

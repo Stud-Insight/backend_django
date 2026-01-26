@@ -4,4 +4,4 @@ from django.utils.translation import gettext_lazy as _
 
 class ProjectsConfig(AppConfig):
     name = "backend_django.projects"
-    verbose_name = _("Academic Projects")
+    verbose_name = _("Projects")
