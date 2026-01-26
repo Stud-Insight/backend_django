@@ -21,6 +21,12 @@ from backend_django.projects.schemas.proposals import ProposalDetailSchema
 from backend_django.projects.schemas.proposals import ProposalListSchema
 from backend_django.projects.schemas.proposals import ProposalStatusUpdateSchema
 from backend_django.projects.schemas.proposals import ProposalUpdateSchema
+from backend_django.projects.schemas.groups import GroupCreateSchema
+from backend_django.projects.schemas.groups import GroupDetailSchema
+from backend_django.projects.schemas.groups import GroupListSchema
+from backend_django.projects.schemas.groups import GroupUpdateSchema
+from backend_django.projects.schemas.groups import StagePeriodSchema
+from backend_django.projects.schemas.groups import TERPeriodSchema
 
 __all__ = [
     # Attachments (legacy)
@@ -46,4 +52,11 @@ __all__ = [
     "ProposalStatusUpdateSchema",
     "ApplicationSchema",
     "ApplicationCreateSchema",
+    # Groups
+    "GroupListSchema",
+    "GroupDetailSchema",
+    "GroupCreateSchema",
+    "GroupUpdateSchema",
+    "TERPeriodSchema",
+    "StagePeriodSchema",
 ]
