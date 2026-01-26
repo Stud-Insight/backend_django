@@ -12,7 +12,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('projects', '0003_academicproject_academic_year_and_more'),
+        ('projects', '0004_change_student_cascade_to_set_null'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

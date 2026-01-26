@@ -726,14 +726,20 @@ class StudentGroup(BaseModel):
     # Helper methods
 
     def can_add_member(self) -> bool:
-        """Check if new members can be added to the group."""
+        """
+        Check if new members can be added to the group.
+
+        Rules:
+        - Only groups with status "ouvert" can accept new members.
+        - TER groups are limited by ter_period.max_group_size.
+        - Stage groups have no size limit (internships are typically individual).
+        """
         if self.status != GroupStatus.OUVERT:
             return False
 
-        # Check group size limits
-        period = self.ter_period or self.stage_period
-        if period and hasattr(period, 'max_group_size'):
-            return self.members.count() < period.max_group_size
+        # Check group size limits (only TER periods have max_group_size)
+        if self.ter_period and self.ter_period.max_group_size:
+            return self.members.count() < self.ter_period.max_group_size
 
         return True
 

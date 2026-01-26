@@ -6,14 +6,12 @@ from datetime import date
 from datetime import timedelta
 
 import pytest
-from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django_fsm import TransitionNotAllowed
 
 from backend_django.projects.models import AcademicProjectType
 from backend_django.projects.models import GroupStatus
 from backend_django.projects.models import PeriodStatus
-from backend_django.projects.models import Proposal
 from backend_django.projects.models import StagePeriod
 from backend_django.projects.models import StudentGroup
 from backend_django.projects.models import TERPeriod
@@ -281,6 +279,20 @@ class TestStudentGroupCanAddMember:
         assert group.member_count == 4
         assert group.can_add_member() is False
 
+    def test_stage_group_has_no_size_limit(self, stage_period, leader, members):
+        """Test that Stage groups have no size limit (internships are individual)."""
+        group = StudentGroup.objects.create(
+            name="Stage Group",
+            leader=leader,
+            project_type=AcademicProjectType.INTERNSHIP,
+            stage_period=stage_period,
+        )
+        # Add many members - should always be allowed since Stage has no limit
+        group.members.add(*members)
+
+        assert group.member_count == 4  # leader + 3 members
+        assert group.can_add_member() is True  # No limit for Stage
+
 
 @pytest.mark.django_db
 class TestStudentGroupCanRemoveMember:
@@ -333,6 +345,18 @@ class TestStudentGroupCanRemoveMember:
         )
 
         assert group.can_remove_member(members[0]) is False
+
+    def test_can_remove_member_from_stage_group(self, stage_period, leader, members):
+        """Test can remove member from Stage group when open."""
+        group = StudentGroup.objects.create(
+            name="Stage Group",
+            leader=leader,
+            project_type=AcademicProjectType.INTERNSHIP,
+            stage_period=stage_period,
+        )
+        group.members.add(members[0])
+
+        assert group.can_remove_member(members[0]) is True
 
 
 @pytest.mark.django_db
