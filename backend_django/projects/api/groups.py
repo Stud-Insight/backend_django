@@ -440,3 +440,49 @@ class GroupController(BaseAPI):
         invitation.cancel()
 
         return 200, MessageSchema(success=True, message="Invitation annulée.")
+
+    # ==================== Member Management Endpoints ====================
+
+    @http_post(
+        "/{group_id}/leave",
+        response={200: MessageSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="groups_leave",
+    )
+    def leave_group(self, request: HttpRequest, group_id: UUID):
+        """
+        Leave a group.
+
+        Only non-leader members can leave.
+        Group must not be closed (clôturé).
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        group = get_object_or_404(StudentGroup, id=group_id)
+
+        # Check user is a member
+        if not group.is_member(request.user):
+            return BadRequestError("Vous n'êtes pas membre de ce groupe.").to_response()
+
+        # Check user is not the leader
+        if group.is_leader(request.user):
+            return BadRequestError("Le leader doit transférer le leadership avant de quitter.").to_response()
+
+        # Check group is not closed
+        if group.status == GroupStatus.CLOTURE:
+            return BadRequestError("Impossible de quitter un groupe clôturé.").to_response()
+
+        # Remove user from group
+        group.members.remove(request.user)
+
+        # Log notification (placeholder for real notification system)
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(
+            "NOTIFICATION: %s left group '%s' (leader: %s)",
+            request.user.get_full_name() or request.user.email,
+            group.name,
+            group.leader.email,
+        )
+
+        return 200, MessageSchema(success=True, message="Vous avez quitté le groupe.")

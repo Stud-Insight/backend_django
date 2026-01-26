@@ -804,3 +804,119 @@ class TestAutoDeclineInvitations:
         # Stage invitation should still be pending (different period type)
         inv_stage.refresh_from_db()
         assert inv_stage.status == InvitationStatus.PENDING
+
+
+@pytest.mark.django_db
+class TestLeaveGroupEndpoint:
+    """Tests for POST /api/groups/{id}/leave."""
+
+    def test_member_can_leave_open_group(self, another_client, ter_period_open, student_user, another_student):
+        """Test member can leave an open group."""
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type=AcademicProjectType.SRW,
+            ter_period=ter_period_open,
+        )
+        group.members.add(another_student)
+
+        response = another_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = another_client.post(
+            f"/api/groups/{group.id}/leave",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 200
+        assert "quitté" in response.json()["message"]
+
+        # Verify user is no longer a member
+        updated_group = StudentGroup.objects.get(id=group.id)
+        assert not updated_group.is_member(another_student)
+
+    def test_member_can_leave_formed_group(self, another_client, ter_period_open, student_user, another_student):
+        """Test member can leave a formed group."""
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type=AcademicProjectType.SRW,
+            ter_period=ter_period_open,
+        )
+        group.members.add(another_student)
+        group.form_group()
+        group.save()
+
+        response = another_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = another_client.post(
+            f"/api/groups/{group.id}/leave",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 200
+
+    def test_cannot_leave_closed_group(self, another_client, ter_period_open, student_user, another_student):
+        """Test cannot leave a closed group."""
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type=AcademicProjectType.SRW,
+            ter_period=ter_period_open,
+        )
+        group.members.add(another_student)
+        group.form_group()
+        group.close_group()
+        group.save()
+
+        response = another_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = another_client.post(
+            f"/api/groups/{group.id}/leave",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 400
+        assert "clôturé" in response.json()["message"]
+
+    def test_leader_cannot_leave(self, authenticated_client, ter_period_open, student_user):
+        """Test leader cannot leave without transferring leadership."""
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type=AcademicProjectType.SRW,
+            ter_period=ter_period_open,
+        )
+
+        response = authenticated_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = authenticated_client.post(
+            f"/api/groups/{group.id}/leave",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 400
+        assert "leader" in response.json()["message"].lower()
+
+    def test_non_member_cannot_leave(self, another_client, ter_period_open, student_user):
+        """Test non-member cannot leave a group."""
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type=AcademicProjectType.SRW,
+            ter_period=ter_period_open,
+        )
+
+        response = another_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = another_client.post(
+            f"/api/groups/{group.id}/leave",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 400
+        assert "membre" in response.json()["message"]
