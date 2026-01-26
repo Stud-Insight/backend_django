@@ -2,9 +2,13 @@
 Groups API controller.
 """
 
+import logging
 from datetime import date
 from uuid import UUID
 
+logger = logging.getLogger(__name__)
+
+from django.db.models import Count, Q
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from ninja_extra import api_controller
@@ -492,9 +496,17 @@ class GroupController(BaseAPI):
         # Remove user from group
         group.members.remove(request.user)
 
+        # Auto-revert: formé → ouvert when member count drops below 2
+        if group.status == GroupStatus.FORME and group.member_count < 2:
+            group.reopen_group()
+            group.save()
+            logger.info(
+                "AUTO-TRANSITION: Group '%s' reverted to ouvert (now has %d members)",
+                group.name,
+                group.member_count,
+            )
+
         # Log notification (placeholder for real notification system)
-        import logging
-        logger = logging.getLogger(__name__)
         logger.info(
             "NOTIFICATION: %s left group '%s' (leader: %s)",
             request.user.get_full_name() or request.user.email,
@@ -547,8 +559,6 @@ class GroupController(BaseAPI):
         group.save()
 
         # Log notification (placeholder for real notification system)
-        import logging
-        logger = logging.getLogger(__name__)
         logger.info(
             "NOTIFICATION: Leadership transferred from %s to %s in group '%s'",
             old_leader.get_full_name() or old_leader.email,
@@ -603,8 +613,6 @@ class GroupController(BaseAPI):
             return BadRequestError(f"Impossible de fermer le groupe: {e!s}").to_response()
 
         # Log notification
-        import logging
-        logger = logging.getLogger(__name__)
         logger.info(
             "NOTIFICATION: Group '%s' closed by leader %s",
             group.name,
@@ -650,7 +658,6 @@ class GroupController(BaseAPI):
         }
 
         # Count students in groups
-        from django.db.models import Count
         students_in_groups = User.objects.filter(
             student_groups__ter_period=ter_period
         ).distinct().count()
@@ -700,31 +707,32 @@ class GroupController(BaseAPI):
         ).values_list("id", flat=True)
 
         # Get all active non-staff users NOT in any group for this period
+        # Use annotate to count pending invitations in a single query (avoid N+1)
         solitaires = User.objects.filter(
             is_active=True,
             is_staff=False,
         ).exclude(
             id__in=students_in_groups
-        ).prefetch_related("group_invitations")
+        ).annotate(
+            pending_invitations=Count(
+                "group_invitations",
+                filter=Q(
+                    group_invitations__status=InvitationStatus.PENDING,
+                    group_invitations__group__ter_period=ter_period,
+                ),
+            )
+        )
 
-        result = []
-        for user in solitaires:
-            # Count pending invitations for groups in this period
-            pending_invitations = GroupInvitation.objects.filter(
-                invitee=user,
-                status=InvitationStatus.PENDING,
-                group__ter_period=ter_period,
-            ).count()
-
-            result.append(SolitaireSchema(
+        return 200, [
+            SolitaireSchema(
                 id=user.id,
                 email=user.email,
                 first_name=user.first_name,
                 last_name=user.last_name,
-                pending_invitations=pending_invitations,
-            ))
-
-        return 200, result
+                pending_invitations=user.pending_invitations,
+            )
+            for user in solitaires
+        ]
 
     @http_get(
         "/dashboard/{ter_period_id}/incomplete",
@@ -746,7 +754,6 @@ class GroupController(BaseAPI):
         ter_period = get_object_or_404(TERPeriod, id=ter_period_id)
 
         # Get groups with <2 members
-        from django.db.models import Count
         incomplete_groups = StudentGroup.objects.filter(
             ter_period=ter_period
         ).annotate(

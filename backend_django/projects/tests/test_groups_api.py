@@ -836,7 +836,7 @@ class TestLeaveGroupEndpoint:
         assert not updated_group.is_member(another_student)
 
     def test_member_can_leave_formed_group(self, another_client, ter_period_open, student_user, another_student):
-        """Test member can leave a formed group."""
+        """Test member can leave a formed group and it reverts to ouvert."""
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
@@ -847,6 +847,10 @@ class TestLeaveGroupEndpoint:
         group.form_group()
         group.save()
 
+        # Verify group is formed with 2 members
+        assert group.status == GroupStatus.FORME
+        assert group.member_count == 2
+
         response = another_client.get("/api/auth/csrf")
         csrf_token = response.json()["csrf_token"]
 
@@ -856,6 +860,11 @@ class TestLeaveGroupEndpoint:
             HTTP_X_CSRFTOKEN=csrf_token,
         )
         assert response.status_code == 200
+
+        # Verify group reverts to ouvert when member count drops below 2
+        updated_group = StudentGroup.objects.get(id=group.id)
+        assert updated_group.status == GroupStatus.OUVERT
+        assert updated_group.member_count == 1
 
     def test_cannot_leave_closed_group(self, another_client, ter_period_open, student_user, another_student):
         """Test cannot leave a closed group."""

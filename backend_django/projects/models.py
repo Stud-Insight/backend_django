@@ -860,48 +860,43 @@ class GroupInvitation(BaseModel):
 
         Also auto-declines other pending invitations for the same period.
         Triggers automatic status transition if group reaches 2+ members.
+        Uses database-level locking to prevent race conditions.
         """
+        from django.db import transaction
         from django.utils import timezone
 
         if not self.can_respond():
             raise ValueError("Cannot accept invitation that is not pending")
 
-        if not self.group.can_add_member():
-            raise ValueError("Group cannot accept new members")
+        with transaction.atomic():
+            # Lock the group row to prevent concurrent acceptance
+            group = StudentGroup.objects.select_for_update().get(id=self.group_id)
 
-        self.status = InvitationStatus.ACCEPTED
-        self.responded_at = timezone.now()
-        self.save()
+            if not group.can_add_member():
+                raise ValueError("Group cannot accept new members")
 
-        # Add to group members
-        self.group.members.add(self.invitee)
+            self.status = InvitationStatus.ACCEPTED
+            self.responded_at = timezone.now()
+            self.save()
 
-        # Auto-transition: ouvert → formé when 2nd member joins
-        self._check_auto_form_group()
+            # Add to group members
+            group.members.add(self.invitee)
+
+            # Auto-transition: ouvert → formé when 2nd member joins
+            if group.status == GroupStatus.OUVERT and group.member_count >= 2:
+                group.form_group()
+                group.save()
+                logger.info(
+                    "AUTO-TRANSITION: Group '%s' formed (now has %d members)",
+                    group.name,
+                    group.member_count,
+                )
 
         # Auto-decline other pending invitations for the same period
         self._auto_decline_other_invitations()
 
         # TODO: Send real notification when notification system is implemented
         self._notify_leader_accepted()
-
-    def _check_auto_form_group(self):
-        """
-        Auto-transition group from ouvert → formé when 2nd member joins.
-
-        This enforces the progressive locking workflow (FR25, ARCH-2).
-        """
-        # Refresh group to get updated member count
-        group = StudentGroup.objects.get(id=self.group_id)
-
-        if group.status == GroupStatus.OUVERT and group.member_count >= 2:
-            group.form_group()
-            group.save()
-            logger.info(
-                "AUTO-TRANSITION: Group '%s' formed (now has %d members)",
-                group.name,
-                group.member_count,
-            )
 
     def _auto_decline_other_invitations(self):
         """Auto-decline other pending invitations for the same period."""

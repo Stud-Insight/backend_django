@@ -8,7 +8,6 @@ from uuid import UUID
 from ninja import Schema
 from pydantic import field_validator
 
-from backend_django.projects.models import AcademicProjectType
 from backend_django.projects.schemas.projects import UserMinimalSchema
 
 
