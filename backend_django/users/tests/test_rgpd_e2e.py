@@ -106,7 +106,7 @@ class TestUserDataExportWorkflow:
 
         # Create some project data for the student
         supervisor = UserFactory(is_active=True)
-        project = AcademicProject.objects.create(
+        AcademicProject.objects.create(
             student=student,
             supervisor=supervisor,
             subject="Machine Learning pour la détection de fraude",

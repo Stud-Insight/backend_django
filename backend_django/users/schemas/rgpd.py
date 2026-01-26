@@ -33,11 +33,3 @@ class RGPDDeleteResponseSchema(Schema):
     user_id: UUID
     anonymized_email: str
     actions: list[str]
-
-
-class RGPDExportRequestResponseSchema(Schema):
-    """Response for requesting an export (async)."""
-
-    success: bool
-    message: str
-    request_id: str | None = None

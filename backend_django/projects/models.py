@@ -135,7 +135,9 @@ class AcademicProject(BaseModel):
 
     student = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="projects_as_student",
         verbose_name=_("student"),
     )

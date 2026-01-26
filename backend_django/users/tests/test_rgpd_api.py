@@ -8,7 +8,6 @@ from django.test import Client
 
 from backend_django.chat.models import Conversation
 from backend_django.chat.models import Message
-from backend_django.users.models import User
 from backend_django.users.tests.factories import UserFactory
 
 

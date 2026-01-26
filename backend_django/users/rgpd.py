@@ -12,7 +12,6 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from django.contrib.auth.models import Group
 from django.db import transaction
 
 from backend_django.users.models import User
@@ -299,6 +298,7 @@ def anonymize_user(user: User, deleted_by: User | None = None) -> dict[str, Any]
         summary["actions"].append(f"deleted_{email_count}_email_addresses")
     except Exception as e:
         logger.warning(f"Could not delete email addresses: {e}")
+        summary["actions"].append("failed_to_delete_email_addresses")
 
     logger.info(
         f"User {original_email} anonymized by {deleted_by.email if deleted_by else 'system'}. "

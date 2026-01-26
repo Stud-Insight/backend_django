@@ -12,7 +12,6 @@ from backend_django.projects.models import AcademicProjectType
 from backend_django.projects.models import Attachment
 from backend_django.projects.models import Proposal
 from backend_django.projects.models import ProposalApplication
-from backend_django.users.models import User
 from backend_django.users.rgpd import anonymize_user
 from backend_django.users.rgpd import can_delete_user
 from backend_django.users.rgpd import collect_user_data
@@ -111,7 +110,7 @@ class TestCollectUserData:
         """Test that projects where user is student are collected."""
         from datetime import date
 
-        project = AcademicProject.objects.create(
+        AcademicProject.objects.create(
             student=user_with_data,
             subject="Test Project",
             project_type=AcademicProjectType.SRW,
@@ -136,7 +135,7 @@ class TestCollectUserData:
             academic_year="2024-2025",
         )
 
-        application = ProposalApplication.objects.create(
+        ProposalApplication.objects.create(
             proposal=proposal,
             applicant=user_with_data,
             motivation="I want to work on this",
