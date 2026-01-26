@@ -28,6 +28,7 @@ from backend_django.projects.schemas.groups import GroupUpdateSchema
 from backend_django.projects.schemas.groups import InvitationCreateSchema
 from backend_django.projects.schemas.groups import InvitationResponseSchema
 from backend_django.projects.schemas.groups import InvitationSchema
+from backend_django.projects.schemas.groups import TransferLeadershipSchema
 from backend_django.projects.schemas.groups import StagePeriodSchema
 from backend_django.projects.schemas.groups import TERPeriodSchema
 
@@ -66,4 +67,6 @@ __all__ = [
     "InvitationSchema",
     "InvitationCreateSchema",
     "InvitationResponseSchema",
+    # Leadership
+    "TransferLeadershipSchema",
 ]

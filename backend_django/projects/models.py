@@ -859,6 +859,7 @@ class GroupInvitation(BaseModel):
         Accept the invitation and add user to group.
 
         Also auto-declines other pending invitations for the same period.
+        Triggers automatic status transition if group reaches 2+ members.
         """
         from django.utils import timezone
 
@@ -875,11 +876,32 @@ class GroupInvitation(BaseModel):
         # Add to group members
         self.group.members.add(self.invitee)
 
+        # Auto-transition: ouvert → formé when 2nd member joins
+        self._check_auto_form_group()
+
         # Auto-decline other pending invitations for the same period
         self._auto_decline_other_invitations()
 
         # TODO: Send real notification when notification system is implemented
         self._notify_leader_accepted()
+
+    def _check_auto_form_group(self):
+        """
+        Auto-transition group from ouvert → formé when 2nd member joins.
+
+        This enforces the progressive locking workflow (FR25, ARCH-2).
+        """
+        # Refresh group to get updated member count
+        group = StudentGroup.objects.get(id=self.group_id)
+
+        if group.status == GroupStatus.OUVERT and group.member_count >= 2:
+            group.form_group()
+            group.save()
+            logger.info(
+                "AUTO-TRANSITION: Group '%s' formed (now has %d members)",
+                group.name,
+                group.member_count,
+            )
 
     def _auto_decline_other_invitations(self):
         """Auto-decline other pending invitations for the same period."""

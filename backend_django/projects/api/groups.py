@@ -33,8 +33,11 @@ from backend_django.projects.schemas.groups import GroupListSchema
 from backend_django.projects.schemas.groups import InvitationCreateSchema
 from backend_django.projects.schemas.groups import InvitationResponseSchema
 from backend_django.projects.schemas.groups import InvitationSchema
+from backend_django.projects.schemas.groups import TransferLeadershipSchema
 from backend_django.projects.schemas.groups import StagePeriodSchema
 from backend_django.projects.schemas.groups import TERPeriodSchema
+from backend_django.projects.schemas.groups import SolitaireSchema
+from backend_django.projects.schemas.groups import DashboardStatsSchema
 from backend_django.projects.schemas.projects import MessageSchema
 from backend_django.projects.schemas.projects import UserMinimalSchema
 from backend_django.users.models import User
@@ -292,6 +295,12 @@ class GroupController(BaseAPI):
         if group.status != GroupStatus.OUVERT:
             return BadRequestError("Impossible d'inviter dans un groupe qui n'est pas ouvert.").to_response()
 
+        # Check formation deadline has not passed (TER groups)
+        if group.ter_period:
+            today = date.today()
+            if today > group.ter_period.group_formation_end:
+                return BadRequestError("Impossible d'envoyer des invitations après la deadline de formation.").to_response()
+
         # Check group can accept more members
         if not group.can_add_member():
             return BadRequestError("Le groupe a atteint sa taille maximale.").to_response()
@@ -402,6 +411,14 @@ class GroupController(BaseAPI):
         if not invitation.can_respond():
             return BadRequestError("Cette invitation n'est plus en attente.").to_response()
 
+        # Check formation deadline has not passed for acceptance (TER groups)
+        if data.accept:
+            group = invitation.group
+            if group.ter_period:
+                today = date.today()
+                if today > group.ter_period.group_formation_end:
+                    return BadRequestError("Impossible d'accepter une invitation après la deadline de formation.").to_response()
+
         try:
             if data.accept:
                 invitation.accept()
@@ -486,3 +503,256 @@ class GroupController(BaseAPI):
         )
 
         return 200, MessageSchema(success=True, message="Vous avez quitté le groupe.")
+
+    @http_post(
+        "/{group_id}/transfer-leadership",
+        response={200: GroupDetailSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="groups_transfer_leadership",
+    )
+    def transfer_leadership(self, request: HttpRequest, group_id: UUID, data: TransferLeadershipSchema):
+        """
+        Transfer group leadership to another member.
+
+        Only the current leader can transfer leadership.
+        The new leader must be an existing member.
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        group = get_object_or_404(
+            StudentGroup.objects.select_related("leader", "ter_period", "stage_period").prefetch_related("members"),
+            id=group_id,
+        )
+
+        # Check user is the leader
+        if not group.is_leader(request.user):
+            return PermissionDeniedError("Seul le leader peut transférer le leadership.").to_response()
+
+        # Find the new leader
+        new_leader = User.objects.filter(id=data.new_leader_id).first()
+        if not new_leader:
+            return NotFoundError("Utilisateur non trouvé.").to_response()
+
+        # Check new leader is a member
+        if not group.is_member(new_leader):
+            return BadRequestError("Le nouveau leader doit être membre du groupe.").to_response()
+
+        # Check not transferring to self
+        if new_leader.id == request.user.id:
+            return BadRequestError("Vous êtes déjà le leader.").to_response()
+
+        # Transfer leadership
+        old_leader = group.leader
+        group.leader = new_leader
+        group.save()
+
+        # Log notification (placeholder for real notification system)
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(
+            "NOTIFICATION: Leadership transferred from %s to %s in group '%s'",
+            old_leader.get_full_name() or old_leader.email,
+            new_leader.get_full_name() or new_leader.email,
+            group.name,
+        )
+
+        # Reload group
+        group = StudentGroup.objects.select_related(
+            "leader", "ter_period", "stage_period"
+        ).prefetch_related("members").get(id=group.id)
+
+        return 200, group_to_detail_schema(group)
+
+    @http_post(
+        "/{group_id}/close",
+        response={200: GroupDetailSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="groups_close",
+    )
+    def close_group(self, request: HttpRequest, group_id: UUID):
+        """
+        Close a group (formé → clôturé).
+
+        Only the leader can close a group.
+        Group must be in "formé" status (has 2+ members).
+        Once closed, no members can join or leave.
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        group = get_object_or_404(
+            StudentGroup.objects.select_related("leader", "ter_period", "stage_period").prefetch_related("members"),
+            id=group_id,
+        )
+
+        # Check user is the leader
+        if not group.is_leader(request.user):
+            return PermissionDeniedError("Seul le leader peut fermer le groupe.").to_response()
+
+        # Check group is in formé status
+        if group.status == GroupStatus.OUVERT:
+            return BadRequestError("Le groupe doit avoir au moins 2 membres pour être clôturé.").to_response()
+
+        if group.status == GroupStatus.CLOTURE:
+            return BadRequestError("Le groupe est déjà clôturé.").to_response()
+
+        # Transition to clôturé
+        try:
+            group.close_group()
+            group.save()
+        except Exception as e:
+            return BadRequestError(f"Impossible de fermer le groupe: {e!s}").to_response()
+
+        # Log notification
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(
+            "NOTIFICATION: Group '%s' closed by leader %s",
+            group.name,
+            request.user.email,
+        )
+
+        # Reload group
+        group = StudentGroup.objects.select_related(
+            "leader", "ter_period", "stage_period"
+        ).prefetch_related("members").get(id=group.id)
+
+        return 200, group_to_detail_schema(group)
+
+    # ==================== Dashboard Endpoints (Respo TER) ====================
+
+    @http_get(
+        "/dashboard/{ter_period_id}/stats",
+        response={200: DashboardStatsSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="groups_dashboard_stats",
+    )
+    def dashboard_stats(self, request: HttpRequest, ter_period_id: UUID):
+        """
+        Get dashboard statistics for a TER period.
+
+        Staff only (Respo TER).
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        if not request.user.is_staff:
+            return PermissionDeniedError("Réservé au personnel.").to_response()
+
+        ter_period = get_object_or_404(TERPeriod, id=ter_period_id)
+
+        # Get all groups for this period
+        groups = StudentGroup.objects.filter(ter_period=ter_period)
+
+        # Count by status
+        groups_by_status = {
+            GroupStatus.OUVERT: groups.filter(status=GroupStatus.OUVERT).count(),
+            GroupStatus.FORME: groups.filter(status=GroupStatus.FORME).count(),
+            GroupStatus.CLOTURE: groups.filter(status=GroupStatus.CLOTURE).count(),
+        }
+
+        # Count students in groups
+        from django.db.models import Count
+        students_in_groups = User.objects.filter(
+            student_groups__ter_period=ter_period
+        ).distinct().count()
+
+        # Count solitaires (active non-staff users not in any group for this period)
+        all_active_students = User.objects.filter(
+            is_active=True,
+            is_staff=False,
+        ).count()
+        solitaires_count = all_active_students - students_in_groups
+
+        # Count incomplete groups (1 member only)
+        incomplete = groups.annotate(
+            members_count=Count("members")
+        ).filter(members_count__lt=2).count()
+
+        return 200, DashboardStatsSchema(
+            total_groups=groups.count(),
+            total_students_in_groups=students_in_groups,
+            total_solitaires=solitaires_count,
+            groups_by_status=groups_by_status,
+            incomplete_groups_count=incomplete,
+        )
+
+    @http_get(
+        "/dashboard/{ter_period_id}/solitaires",
+        response={200: list[SolitaireSchema], 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="groups_dashboard_solitaires",
+    )
+    def list_solitaires(self, request: HttpRequest, ter_period_id: UUID):
+        """
+        List students without a group for a TER period.
+
+        Staff only (Respo TER).
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        if not request.user.is_staff:
+            return PermissionDeniedError("Réservé au personnel.").to_response()
+
+        ter_period = get_object_or_404(TERPeriod, id=ter_period_id)
+
+        # Get all students who are in at least one group for this period
+        students_in_groups = User.objects.filter(
+            student_groups__ter_period=ter_period
+        ).values_list("id", flat=True)
+
+        # Get all active non-staff users NOT in any group for this period
+        solitaires = User.objects.filter(
+            is_active=True,
+            is_staff=False,
+        ).exclude(
+            id__in=students_in_groups
+        ).prefetch_related("group_invitations")
+
+        result = []
+        for user in solitaires:
+            # Count pending invitations for groups in this period
+            pending_invitations = GroupInvitation.objects.filter(
+                invitee=user,
+                status=InvitationStatus.PENDING,
+                group__ter_period=ter_period,
+            ).count()
+
+            result.append(SolitaireSchema(
+                id=user.id,
+                email=user.email,
+                first_name=user.first_name,
+                last_name=user.last_name,
+                pending_invitations=pending_invitations,
+            ))
+
+        return 200, result
+
+    @http_get(
+        "/dashboard/{ter_period_id}/incomplete",
+        response={200: list[GroupListSchema], 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="groups_dashboard_incomplete",
+    )
+    def list_incomplete_groups(self, request: HttpRequest, ter_period_id: UUID):
+        """
+        List groups with less than 2 members for a TER period.
+
+        Staff only (Respo TER).
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        if not request.user.is_staff:
+            return PermissionDeniedError("Réservé au personnel.").to_response()
+
+        ter_period = get_object_or_404(TERPeriod, id=ter_period_id)
+
+        # Get groups with <2 members
+        from django.db.models import Count
+        incomplete_groups = StudentGroup.objects.filter(
+            ter_period=ter_period
+        ).annotate(
+            members_count=Count("members")
+        ).filter(
+            members_count__lt=2
+        ).select_related("leader")
+
+        return 200, [group_to_list_schema(g) for g in incomplete_groups]

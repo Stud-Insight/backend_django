@@ -126,3 +126,29 @@ class InvitationResponseSchema(Schema):
     """Schema for responding to an invitation."""
 
     accept: bool
+
+
+class TransferLeadershipSchema(Schema):
+    """Schema for transferring group leadership."""
+
+    new_leader_id: UUID
+
+
+class SolitaireSchema(Schema):
+    """Schema for students without a group (solitaires)."""
+
+    id: UUID
+    email: str
+    first_name: str
+    last_name: str
+    pending_invitations: int
+
+
+class DashboardStatsSchema(Schema):
+    """Schema for TER period dashboard statistics."""
+
+    total_groups: int
+    total_students_in_groups: int
+    total_solitaires: int
+    groups_by_status: dict[str, int]
+    incomplete_groups_count: int
