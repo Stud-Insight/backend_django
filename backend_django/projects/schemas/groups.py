@@ -89,3 +89,40 @@ class GroupUpdateSchema(Schema):
                 raise ValueError("Le nom du groupe doit faire au moins 3 caractères.")
             return v.strip()
         return v
+
+
+class InvitationSchema(Schema):
+    """Schema for group invitation responses."""
+
+    id: UUID
+    group_id: UUID
+    group_name: str
+    invitee: UserMinimalSchema
+    invited_by: UserMinimalSchema
+    status: str
+    message: str
+    created: datetime
+    responded_at: datetime | None
+
+
+class InvitationCreateSchema(Schema):
+    """Schema for creating an invitation."""
+
+    invitee_email: str
+    message: str = ""
+
+    @field_validator("invitee_email")
+    @classmethod
+    def email_valid(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("L'email est requis.")
+        v = v.strip().lower()
+        if "@" not in v:
+            raise ValueError("Email invalide.")
+        return v
+
+
+class InvitationResponseSchema(Schema):
+    """Schema for responding to an invitation."""
+
+    accept: bool

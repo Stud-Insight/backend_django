@@ -392,3 +392,415 @@ class TestGetGroupEndpoint:
         fake_uuid = "00000000-0000-0000-0000-000000000000"
         response = authenticated_client.get(f"/api/groups/{fake_uuid}")
         assert response.status_code == 404
+
+
+@pytest.mark.django_db
+class TestInviteToGroupEndpoint:
+    """Tests for POST /api/groups/{id}/invite."""
+
+    def test_invite_success(self, authenticated_client, ter_period_open, student_user, another_student):
+        """Test leader can invite a student."""
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type=AcademicProjectType.SRW,
+            ter_period=ter_period_open,
+        )
+
+        response = authenticated_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = authenticated_client.post(
+            f"/api/groups/{group.id}/invite",
+            data={"invitee_email": another_student.email, "message": "Join us!"},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 201
+
+        data = response.json()
+        assert data["invitee"]["email"] == another_student.email
+        assert data["status"] == "pending"
+        assert data["message"] == "Join us!"
+
+    def test_invite_non_leader_denied(self, another_client, ter_period_open, student_user, another_student):
+        """Test non-leader cannot invite."""
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type=AcademicProjectType.SRW,
+            ter_period=ter_period_open,
+        )
+
+        response = another_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        # another_student tries to invite (not the leader)
+        response = another_client.post(
+            f"/api/groups/{group.id}/invite",
+            data={"invitee_email": "someone@test.com"},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 403
+
+    def test_invite_to_closed_group_denied(self, authenticated_client, ter_period_open, student_user, another_student):
+        """Test cannot invite to a formed/closed group."""
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type=AcademicProjectType.SRW,
+            ter_period=ter_period_open,
+        )
+        group.form_group()
+        group.save()
+
+        response = authenticated_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = authenticated_client.post(
+            f"/api/groups/{group.id}/invite",
+            data={"invitee_email": another_student.email},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 400
+        assert "ouvert" in response.json()["message"]
+
+    def test_invite_existing_member_denied(self, authenticated_client, ter_period_open, student_user, another_student):
+        """Test cannot invite someone already in the group."""
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type=AcademicProjectType.SRW,
+            ter_period=ter_period_open,
+        )
+        group.members.add(another_student)
+
+        response = authenticated_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = authenticated_client.post(
+            f"/api/groups/{group.id}/invite",
+            data={"invitee_email": another_student.email},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 400
+        assert "déjà membre" in response.json()["message"]
+
+    def test_invite_unknown_email(self, authenticated_client, ter_period_open, student_user):
+        """Test inviting unknown email returns 404."""
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type=AcademicProjectType.SRW,
+            ter_period=ter_period_open,
+        )
+
+        response = authenticated_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = authenticated_client.post(
+            f"/api/groups/{group.id}/invite",
+            data={"invitee_email": "unknown@test.com"},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 404
+
+    def test_duplicate_pending_invitation_denied(self, authenticated_client, ter_period_open, student_user, another_student):
+        """Test cannot send duplicate pending invitation."""
+        from backend_django.projects.models import GroupInvitation
+
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type=AcademicProjectType.SRW,
+            ter_period=ter_period_open,
+        )
+
+        # Create existing pending invitation
+        GroupInvitation.objects.create(
+            group=group,
+            invitee=another_student,
+            invited_by=student_user,
+        )
+
+        response = authenticated_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = authenticated_client.post(
+            f"/api/groups/{group.id}/invite",
+            data={"invitee_email": another_student.email},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 409  # AlreadyExistsError
+
+
+@pytest.mark.django_db
+class TestRespondToInvitationEndpoint:
+    """Tests for POST /api/groups/invitations/{id}/respond."""
+
+    def test_accept_invitation(self, another_client, ter_period_open, student_user, another_student):
+        """Test invitee can accept invitation."""
+        from backend_django.projects.models import GroupInvitation
+
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type=AcademicProjectType.SRW,
+            ter_period=ter_period_open,
+        )
+
+        invitation = GroupInvitation.objects.create(
+            group=group,
+            invitee=another_student,
+            invited_by=student_user,
+        )
+
+        response = another_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = another_client.post(
+            f"/api/groups/invitations/{invitation.id}/respond",
+            data={"accept": True},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["status"] == "accepted"
+
+        # Verify user was added to group (reload from DB to avoid FSM issues)
+        updated_group = StudentGroup.objects.get(id=group.id)
+        assert updated_group.is_member(another_student)
+
+    def test_decline_invitation(self, another_client, ter_period_open, student_user, another_student):
+        """Test invitee can decline invitation."""
+        from backend_django.projects.models import GroupInvitation
+
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type=AcademicProjectType.SRW,
+            ter_period=ter_period_open,
+        )
+
+        invitation = GroupInvitation.objects.create(
+            group=group,
+            invitee=another_student,
+            invited_by=student_user,
+        )
+
+        response = another_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = another_client.post(
+            f"/api/groups/invitations/{invitation.id}/respond",
+            data={"accept": False},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["status"] == "declined"
+
+        # Verify user was NOT added to group (reload from DB)
+        updated_group = StudentGroup.objects.get(id=group.id)
+        assert not updated_group.is_member(another_student)
+
+    def test_respond_wrong_user_denied(self, authenticated_client, ter_period_open, student_user, another_student):
+        """Test cannot respond to someone else's invitation."""
+        from backend_django.projects.models import GroupInvitation
+
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type=AcademicProjectType.SRW,
+            ter_period=ter_period_open,
+        )
+
+        invitation = GroupInvitation.objects.create(
+            group=group,
+            invitee=another_student,
+            invited_by=student_user,
+        )
+
+        response = authenticated_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        # student_user (leader) tries to respond to another_student's invitation
+        response = authenticated_client.post(
+            f"/api/groups/invitations/{invitation.id}/respond",
+            data={"accept": True},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.django_db
+class TestMyInvitationsEndpoint:
+    """Tests for GET /api/groups/invitations/received."""
+
+    def test_list_my_invitations(self, another_client, ter_period_open, student_user, another_student):
+        """Test user can see their received invitations."""
+        from backend_django.projects.models import GroupInvitation
+
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type=AcademicProjectType.SRW,
+            ter_period=ter_period_open,
+        )
+
+        GroupInvitation.objects.create(
+            group=group,
+            invitee=another_student,
+            invited_by=student_user,
+            message="Please join!",
+        )
+
+        response = another_client.get("/api/groups/invitations/received")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["group_name"] == "Test Group"
+        assert data[0]["message"] == "Please join!"
+
+
+@pytest.mark.django_db
+class TestAutoDeclineInvitations:
+    """Tests for auto-declining other invitations when accepting one."""
+
+    def test_accept_auto_declines_other_invitations_same_period(
+        self, another_client, ter_period_open, student_user, another_student
+    ):
+        """Test accepting invitation auto-declines others for same period."""
+        from backend_django.projects.models import GroupInvitation, InvitationStatus
+
+        # Create two groups in the same period
+        group1 = StudentGroup.objects.create(
+            name="Group 1",
+            leader=student_user,
+            project_type=AcademicProjectType.SRW,
+            ter_period=ter_period_open,
+        )
+
+        third_user = UserFactory(email="third@test.com", is_active=True)
+        third_user.set_password("testpass123")
+        third_user.save()
+
+        group2 = StudentGroup.objects.create(
+            name="Group 2",
+            leader=third_user,
+            project_type=AcademicProjectType.SRW,
+            ter_period=ter_period_open,
+        )
+
+        # Invite another_student to both groups
+        inv1 = GroupInvitation.objects.create(
+            group=group1,
+            invitee=another_student,
+            invited_by=student_user,
+        )
+        inv2 = GroupInvitation.objects.create(
+            group=group2,
+            invitee=another_student,
+            invited_by=third_user,
+        )
+
+        # another_student accepts inv1
+        response = another_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = another_client.post(
+            f"/api/groups/invitations/{inv1.id}/respond",
+            data={"accept": True},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 200
+
+        # inv1 should be accepted
+        inv1.refresh_from_db()
+        assert inv1.status == InvitationStatus.ACCEPTED
+
+        # inv2 should be auto-declined
+        inv2.refresh_from_db()
+        assert inv2.status == InvitationStatus.DECLINED
+
+    def test_accept_does_not_affect_different_period(
+        self, another_client, ter_period_open, student_user, another_student
+    ):
+        """Test accepting invitation does not affect invitations for different periods."""
+        from backend_django.projects.models import GroupInvitation, InvitationStatus, StagePeriod, PeriodStatus
+        from datetime import timedelta
+
+        today = date.today()
+
+        # Create a stage period
+        stage_period = StagePeriod.objects.create(
+            name="Stage 2024-2025",
+            academic_year="2024-2025",
+            status=PeriodStatus.OPEN,
+            offer_submission_start=today,
+            offer_submission_end=today + timedelta(days=30),
+            application_start=today,
+            application_end=today + timedelta(days=60),
+            internship_start=today + timedelta(days=90),
+            internship_end=today + timedelta(days=180),
+        )
+
+        # TER group
+        group_ter = StudentGroup.objects.create(
+            name="TER Group",
+            leader=student_user,
+            project_type=AcademicProjectType.SRW,
+            ter_period=ter_period_open,
+        )
+
+        third_user = UserFactory(email="third2@test.com", is_active=True)
+        third_user.set_password("testpass123")
+        third_user.save()
+
+        # Stage group
+        group_stage = StudentGroup.objects.create(
+            name="Stage Group",
+            leader=third_user,
+            project_type=AcademicProjectType.INTERNSHIP,
+            stage_period=stage_period,
+        )
+
+        # Invite another_student to both
+        inv_ter = GroupInvitation.objects.create(
+            group=group_ter,
+            invitee=another_student,
+            invited_by=student_user,
+        )
+        inv_stage = GroupInvitation.objects.create(
+            group=group_stage,
+            invitee=another_student,
+            invited_by=third_user,
+        )
+
+        # Accept TER invitation
+        response = another_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = another_client.post(
+            f"/api/groups/invitations/{inv_ter.id}/respond",
+            data={"accept": True},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 200
+
+        # Stage invitation should still be pending (different period type)
+        inv_stage.refresh_from_db()
+        assert inv_stage.status == InvitationStatus.PENDING

@@ -2,6 +2,7 @@
 Models for academic projects, periods, groups and file attachments.
 """
 
+import logging
 import uuid
 from datetime import date
 
@@ -12,6 +13,8 @@ from django_fsm import FSMField
 from django_fsm import transition
 
 from backend_django.core.models import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 def get_current_academic_year() -> str:
@@ -770,3 +773,190 @@ class StudentGroup(BaseModel):
     def member_count(self) -> int:
         """Return the number of members in the group."""
         return self.members.count()
+
+
+class InvitationStatus(models.TextChoices):
+    """Status choices for group invitations."""
+
+    PENDING = "pending", _("En attente")
+    ACCEPTED = "accepted", _("Acceptée")
+    DECLINED = "declined", _("Refusée")
+    CANCELLED = "cancelled", _("Annulée")
+
+
+class GroupInvitation(BaseModel):
+    """
+    Invitation to join a student group.
+
+    Tracks invitations sent by group leaders to students.
+    """
+
+    group = models.ForeignKey(
+        StudentGroup,
+        on_delete=models.CASCADE,
+        related_name="invitations",
+        verbose_name=_("group"),
+    )
+
+    invitee = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="group_invitations",
+        verbose_name=_("invitee"),
+        help_text=_("The student being invited"),
+    )
+
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="sent_invitations",
+        verbose_name=_("invited by"),
+        help_text=_("The leader who sent the invitation"),
+    )
+
+    status = models.CharField(
+        _("status"),
+        max_length=20,
+        choices=InvitationStatus.choices,
+        default=InvitationStatus.PENDING,
+    )
+
+    message = models.TextField(
+        _("message"),
+        blank=True,
+        help_text=_("Optional message from the leader"),
+    )
+
+    responded_at = models.DateTimeField(
+        _("responded at"),
+        null=True,
+        blank=True,
+        help_text=_("When the invitee responded"),
+    )
+
+    class Meta:
+        verbose_name = _("group invitation")
+        verbose_name_plural = _("group invitations")
+        ordering = ["-created"]
+        constraints = [
+            # One pending invitation per user per group
+            models.UniqueConstraint(
+                fields=["group", "invitee"],
+                condition=models.Q(status="pending"),
+                name="unique_pending_invitation",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Invitation to {self.invitee.email} for {self.group.name}"
+
+    def can_respond(self) -> bool:
+        """Check if invitation can still be responded to."""
+        return self.status == InvitationStatus.PENDING
+
+    def accept(self):
+        """
+        Accept the invitation and add user to group.
+
+        Also auto-declines other pending invitations for the same period.
+        """
+        from django.utils import timezone
+
+        if not self.can_respond():
+            raise ValueError("Cannot accept invitation that is not pending")
+
+        if not self.group.can_add_member():
+            raise ValueError("Group cannot accept new members")
+
+        self.status = InvitationStatus.ACCEPTED
+        self.responded_at = timezone.now()
+        self.save()
+
+        # Add to group members
+        self.group.members.add(self.invitee)
+
+        # Auto-decline other pending invitations for the same period
+        self._auto_decline_other_invitations()
+
+        # TODO: Send real notification when notification system is implemented
+        self._notify_leader_accepted()
+
+    def _auto_decline_other_invitations(self):
+        """Auto-decline other pending invitations for the same period."""
+        from django.utils import timezone
+
+        # Get the period from the accepted group
+        period = self.group.get_period()
+        if not period:
+            return
+
+        # Find other pending invitations for groups in the same period
+        other_invitations = GroupInvitation.objects.filter(
+            invitee=self.invitee,
+            status=InvitationStatus.PENDING,
+        ).exclude(id=self.id)
+
+        # Filter by same period type
+        if self.group.ter_period:
+            other_invitations = other_invitations.filter(
+                group__ter_period=self.group.ter_period
+            )
+        elif self.group.stage_period:
+            other_invitations = other_invitations.filter(
+                group__stage_period=self.group.stage_period
+            )
+
+        # Decline them all
+        now = timezone.now()
+        other_invitations.update(
+            status=InvitationStatus.DECLINED,
+            responded_at=now,
+        )
+
+    def decline(self):
+        """Decline the invitation."""
+        from django.utils import timezone
+
+        if not self.can_respond():
+            raise ValueError("Cannot decline invitation that is not pending")
+
+        self.status = InvitationStatus.DECLINED
+        self.responded_at = timezone.now()
+        self.save()
+
+        # TODO: Send real notification when notification system is implemented
+        self._notify_leader_declined()
+
+    def cancel(self):
+        """Cancel the invitation (by leader)."""
+        if not self.can_respond():
+            raise ValueError("Cannot cancel invitation that is not pending")
+
+        self.status = InvitationStatus.CANCELLED
+        self.save()
+
+    def _notify_leader_accepted(self):
+        """
+        Notify the group leader that the invitation was accepted.
+
+        TODO: Replace with real notification system (email, in-app, etc.)
+        """
+        logger.info(
+            "NOTIFICATION: %s joined group '%s' (leader: %s)",
+            self.invitee.get_full_name() or self.invitee.email,
+            self.group.name,
+            self.group.leader.email,
+        )
+
+    def _notify_leader_declined(self):
+        """
+        Notify the group leader that the invitation was declined.
+
+        TODO: Replace with real notification system (email, in-app, etc.)
+        """
+        logger.info(
+            "NOTIFICATION: %s declined invitation to group '%s' (leader: %s)",
+            self.invitee.get_full_name() or self.invitee.email,
+            self.group.name,
+            self.group.leader.email,
+        )

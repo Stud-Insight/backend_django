@@ -18,8 +18,11 @@ from backend_django.core.exceptions import ErrorSchema
 from backend_django.core.exceptions import NotAuthenticatedError
 from backend_django.core.exceptions import NotFoundError
 from backend_django.core.exceptions import PermissionDeniedError
+from backend_django.core.exceptions import AlreadyExistsError
 from backend_django.projects.models import AcademicProjectType
+from backend_django.projects.models import GroupInvitation
 from backend_django.projects.models import GroupStatus
+from backend_django.projects.models import InvitationStatus
 from backend_django.projects.models import PeriodStatus
 from backend_django.projects.models import StagePeriod
 from backend_django.projects.models import StudentGroup
@@ -27,10 +30,14 @@ from backend_django.projects.models import TERPeriod
 from backend_django.projects.schemas.groups import GroupCreateSchema
 from backend_django.projects.schemas.groups import GroupDetailSchema
 from backend_django.projects.schemas.groups import GroupListSchema
+from backend_django.projects.schemas.groups import InvitationCreateSchema
+from backend_django.projects.schemas.groups import InvitationResponseSchema
+from backend_django.projects.schemas.groups import InvitationSchema
 from backend_django.projects.schemas.groups import StagePeriodSchema
 from backend_django.projects.schemas.groups import TERPeriodSchema
 from backend_django.projects.schemas.projects import MessageSchema
 from backend_django.projects.schemas.projects import UserMinimalSchema
+from backend_django.users.models import User
 
 
 def ter_period_to_schema(period: TERPeriod) -> TERPeriodSchema:
@@ -87,6 +94,21 @@ def group_to_detail_schema(group: StudentGroup) -> GroupDetailSchema:
         ter_period=ter_period_to_schema(group.ter_period) if group.ter_period else None,
         stage_period=stage_period_to_schema(group.stage_period) if group.stage_period else None,
         assigned_proposal_id=group.assigned_proposal_id,
+    )
+
+
+def invitation_to_schema(invitation: GroupInvitation) -> InvitationSchema:
+    """Convert GroupInvitation to schema."""
+    return InvitationSchema(
+        id=invitation.id,
+        group_id=invitation.group_id,
+        group_name=invitation.group.name,
+        invitee=UserMinimalSchema.from_user(invitation.invitee),
+        invited_by=UserMinimalSchema.from_user(invitation.invited_by),
+        status=invitation.status,
+        message=invitation.message,
+        created=invitation.created,
+        responded_at=invitation.responded_at,
     )
 
 
@@ -242,3 +264,179 @@ class GroupController(BaseAPI):
         ).prefetch_related("members").get(id=group.id)
 
         return 201, group_to_detail_schema(group)
+
+    # ==================== Invitation Endpoints ====================
+
+    @http_post(
+        "/{group_id}/invite",
+        response={201: InvitationSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema, 409: ErrorSchema},
+        url_name="groups_invite",
+    )
+    def invite_to_group(self, request: HttpRequest, group_id: UUID, data: InvitationCreateSchema):
+        """
+        Invite a student to join the group.
+
+        Only the group leader can send invitations.
+        Group must be in "ouvert" status.
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        group = get_object_or_404(StudentGroup, id=group_id)
+
+        # Check user is the leader
+        if not group.is_leader(request.user):
+            return PermissionDeniedError("Seul le leader peut inviter des membres.").to_response()
+
+        # Check group is open
+        if group.status != GroupStatus.OUVERT:
+            return BadRequestError("Impossible d'inviter dans un groupe qui n'est pas ouvert.").to_response()
+
+        # Check group can accept more members
+        if not group.can_add_member():
+            return BadRequestError("Le groupe a atteint sa taille maximale.").to_response()
+
+        # Find the invitee by email
+        invitee = User.objects.filter(email=data.invitee_email).first()
+        if not invitee:
+            return NotFoundError(f"Aucun utilisateur trouvé avec l'email {data.invitee_email}.").to_response()
+
+        # Check invitee is not already a member
+        if group.is_member(invitee):
+            return BadRequestError("Cet utilisateur est déjà membre du groupe.").to_response()
+
+        # Check invitee is not the leader
+        if group.is_leader(invitee):
+            return BadRequestError("Vous ne pouvez pas vous inviter vous-même.").to_response()
+
+        # Check no pending invitation exists
+        existing = GroupInvitation.objects.filter(
+            group=group,
+            invitee=invitee,
+            status=InvitationStatus.PENDING,
+        ).first()
+        if existing:
+            return AlreadyExistsError("Une invitation est déjà en attente pour cet utilisateur.").to_response()
+
+        # Create invitation
+        invitation = GroupInvitation.objects.create(
+            group=group,
+            invitee=invitee,
+            invited_by=request.user,
+            message=data.message,
+        )
+
+        # Reload with related data
+        invitation = GroupInvitation.objects.select_related(
+            "group", "invitee", "invited_by"
+        ).get(id=invitation.id)
+
+        return 201, invitation_to_schema(invitation)
+
+    @http_get(
+        "/{group_id}/invitations",
+        response={200: list[InvitationSchema], 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="groups_invitations_list",
+    )
+    def list_group_invitations(self, request: HttpRequest, group_id: UUID):
+        """
+        List invitations for a group.
+
+        Only the group leader can see all invitations.
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        group = get_object_or_404(StudentGroup, id=group_id)
+
+        # Check user is the leader
+        if not group.is_leader(request.user):
+            return PermissionDeniedError("Seul le leader peut voir les invitations.").to_response()
+
+        invitations = GroupInvitation.objects.filter(
+            group=group
+        ).select_related("group", "invitee", "invited_by").order_by("-created")
+
+        return 200, [invitation_to_schema(inv) for inv in invitations]
+
+    @http_get(
+        "/invitations/received",
+        response={200: list[InvitationSchema], 401: ErrorSchema},
+        url_name="invitations_received",
+    )
+    def my_invitations(self, request: HttpRequest):
+        """Get invitations received by current user."""
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        invitations = GroupInvitation.objects.filter(
+            invitee=request.user
+        ).select_related("group", "invitee", "invited_by").order_by("-created")
+
+        return 200, [invitation_to_schema(inv) for inv in invitations]
+
+    @http_post(
+        "/invitations/{invitation_id}/respond",
+        response={200: InvitationSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="invitations_respond",
+    )
+    def respond_to_invitation(self, request: HttpRequest, invitation_id: UUID, data: InvitationResponseSchema):
+        """
+        Accept or decline an invitation.
+
+        Only the invitee can respond.
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        invitation = get_object_or_404(
+            GroupInvitation.objects.select_related("group", "invitee", "invited_by"),
+            id=invitation_id,
+        )
+
+        # Check user is the invitee
+        if invitation.invitee_id != request.user.id:
+            return PermissionDeniedError("Vous ne pouvez répondre qu'à vos propres invitations.").to_response()
+
+        # Check invitation is pending
+        if not invitation.can_respond():
+            return BadRequestError("Cette invitation n'est plus en attente.").to_response()
+
+        try:
+            if data.accept:
+                invitation.accept()
+            else:
+                invitation.decline()
+        except ValueError as e:
+            return BadRequestError(str(e)).to_response()
+
+        return 200, invitation_to_schema(invitation)
+
+    @http_post(
+        "/{group_id}/invitations/{invitation_id}/cancel",
+        response={200: MessageSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="invitations_cancel",
+    )
+    def cancel_invitation(self, request: HttpRequest, group_id: UUID, invitation_id: UUID):
+        """
+        Cancel a pending invitation.
+
+        Only the group leader can cancel invitations.
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        group = get_object_or_404(StudentGroup, id=group_id)
+        invitation = get_object_or_404(GroupInvitation, id=invitation_id, group=group)
+
+        # Check user is the leader
+        if not group.is_leader(request.user):
+            return PermissionDeniedError("Seul le leader peut annuler les invitations.").to_response()
+
+        # Check invitation is pending
+        if not invitation.can_respond():
+            return BadRequestError("Cette invitation n'est plus en attente.").to_response()
+
+        invitation.cancel()
+
+        return 200, MessageSchema(success=True, message="Invitation annulée.")
