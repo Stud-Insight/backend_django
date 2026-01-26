@@ -51,6 +51,7 @@ LOCAL_APPS = [
     "backend_django.users",
     "backend_django.projects",
     "backend_django.chat",
+    "backend_django.ter"
 ]
 
 for app in LOCAL_APPS:
