@@ -98,9 +98,12 @@ class TERPeriodController(BaseAPI):
 
         periods = TERPeriod.objects.all()
 
-        # Non-staff users only see open periods
         if not request.user.is_staff:
-            periods = periods.filter(status=PeriodStatus.OPEN)
+            # Non-staff users only see periods where they are enrolled
+            periods = periods.filter(
+                enrolled_students=request.user,
+                status=PeriodStatus.OPEN,
+            )
         elif status:
             periods = periods.filter(status=status)
 

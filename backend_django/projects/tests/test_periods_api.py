@@ -119,8 +119,13 @@ class TestListTERPeriodsEndpoint:
         response = client.get("/api/ter/periods/")
         assert response.status_code == 403
 
-    def test_list_ter_periods_student(self, authenticated_client, ter_period_open, ter_period_draft):
-        """Test student only sees open periods."""
+    def test_list_ter_periods_student(
+        self, authenticated_client, ter_period_open, ter_period_draft, student_user
+    ):
+        """Test student only sees open periods where they are enrolled."""
+        # Enroll student in the open period
+        ter_period_open.enrolled_students.add(student_user)
+
         response = authenticated_client.get("/api/ter/periods/")
         assert response.status_code == 200
 
@@ -159,8 +164,11 @@ class TestListTERPeriodsEndpoint:
         assert len(data) == 1
         assert data[0]["academic_year"] == "2024-2025"
 
-    def test_response_schema(self, authenticated_client, ter_period_open):
+    def test_response_schema(self, authenticated_client, ter_period_open, student_user):
         """Test response contains expected fields."""
+        # Enroll student in the period
+        ter_period_open.enrolled_students.add(student_user)
+
         response = authenticated_client.get("/api/ter/periods/")
         assert response.status_code == 200
 

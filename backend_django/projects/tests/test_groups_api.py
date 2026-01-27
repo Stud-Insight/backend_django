@@ -8,10 +8,10 @@ from datetime import timedelta
 import pytest
 from django.test import Client
 
+from backend_django.groups.models import Group as StudentGroup
+from backend_django.groups.models import GroupStatus
 from backend_django.projects.models import AcademicProjectType
-from backend_django.projects.models import GroupStatus
 from backend_django.projects.models import PeriodStatus
-from backend_django.projects.models import StudentGroup
 from backend_django.projects.models import TERPeriod
 from backend_django.users.tests.factories import UserFactory
 
@@ -364,6 +364,60 @@ class TestMyGroupsEndpoint:
         assert "Other Group" in names
         assert "Not My Group" not in names
 
+    def test_my_groups_filter_by_ter_period(self, authenticated_client, ter_period_open, student_user):
+        """Test filtering my groups by TER period."""
+        # Create group in open period
+        group1 = StudentGroup.objects.create(
+            name="Group Period 1",
+            leader=student_user,
+            project_type=AcademicProjectType.SRW,
+            ter_period=ter_period_open,
+        )
+
+        # Create another TER period
+        today = date.today()
+        another_period = TERPeriod.objects.create(
+            name="TER Another Period",
+            academic_year="2025-2026",
+            status=PeriodStatus.OPEN,
+            group_formation_start=today - timedelta(days=5),
+            group_formation_end=today + timedelta(days=25),
+            subject_selection_start=today + timedelta(days=31),
+            subject_selection_end=today + timedelta(days=60),
+            assignment_date=today + timedelta(days=61),
+            project_start=today + timedelta(days=70),
+            project_end=today + timedelta(days=180),
+            min_group_size=1,
+            max_group_size=4,
+        )
+
+        # Create group in another period
+        group2 = StudentGroup.objects.create(
+            name="Group Period 2",
+            leader=student_user,
+            project_type=AcademicProjectType.SRW,
+            ter_period=another_period,
+        )
+
+        # Without filter - returns both
+        response = authenticated_client.get("/api/groups/my")
+        assert response.status_code == 200
+        assert len(response.json()) == 2
+
+        # With filter - returns only one
+        response = authenticated_client.get(f"/api/groups/my?ter_period_id={ter_period_open.id}")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["name"] == "Group Period 1"
+
+        # Filter by the other period
+        response = authenticated_client.get(f"/api/groups/my?ter_period_id={another_period.id}")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["name"] == "Group Period 2"
+
 
 @pytest.mark.django_db
 class TestGetGroupEndpoint:
@@ -511,7 +565,7 @@ class TestInviteToGroupEndpoint:
 
     def test_duplicate_pending_invitation_denied(self, authenticated_client, ter_period_open, student_user, another_student):
         """Test cannot send duplicate pending invitation."""
-        from backend_django.projects.models import GroupInvitation
+        from backend_django.groups.models import GroupInvitation
 
         group = StudentGroup.objects.create(
             name="Test Group",
@@ -545,7 +599,7 @@ class TestRespondToInvitationEndpoint:
 
     def test_accept_invitation(self, another_client, ter_period_open, student_user, another_student):
         """Test invitee can accept invitation."""
-        from backend_django.projects.models import GroupInvitation
+        from backend_django.groups.models import GroupInvitation
 
         group = StudentGroup.objects.create(
             name="Test Group",
@@ -580,7 +634,7 @@ class TestRespondToInvitationEndpoint:
 
     def test_decline_invitation(self, another_client, ter_period_open, student_user, another_student):
         """Test invitee can decline invitation."""
-        from backend_django.projects.models import GroupInvitation
+        from backend_django.groups.models import GroupInvitation
 
         group = StudentGroup.objects.create(
             name="Test Group",
@@ -615,7 +669,7 @@ class TestRespondToInvitationEndpoint:
 
     def test_respond_wrong_user_denied(self, authenticated_client, ter_period_open, student_user, another_student):
         """Test cannot respond to someone else's invitation."""
-        from backend_django.projects.models import GroupInvitation
+        from backend_django.groups.models import GroupInvitation
 
         group = StudentGroup.objects.create(
             name="Test Group",
@@ -649,7 +703,7 @@ class TestMyInvitationsEndpoint:
 
     def test_list_my_invitations(self, another_client, ter_period_open, student_user, another_student):
         """Test user can see their received invitations."""
-        from backend_django.projects.models import GroupInvitation
+        from backend_django.groups.models import GroupInvitation
 
         group = StudentGroup.objects.create(
             name="Test Group",
@@ -682,7 +736,7 @@ class TestAutoDeclineInvitations:
         self, another_client, ter_period_open, student_user, another_student
     ):
         """Test accepting invitation auto-declines others for same period."""
-        from backend_django.projects.models import GroupInvitation, InvitationStatus
+        from backend_django.groups.models import GroupInvitation, InvitationStatus
 
         # Create two groups in the same period
         group1 = StudentGroup.objects.create(
@@ -739,7 +793,8 @@ class TestAutoDeclineInvitations:
         self, another_client, ter_period_open, student_user, another_student
     ):
         """Test accepting invitation does not affect invitations for different periods."""
-        from backend_django.projects.models import GroupInvitation, InvitationStatus, StagePeriod, PeriodStatus
+        from backend_django.groups.models import GroupInvitation, InvitationStatus
+        from backend_django.projects.models import StagePeriod, PeriodStatus
         from datetime import timedelta
 
         today = date.today()
@@ -1070,7 +1125,7 @@ class TestAutoGroupStatusTransitions:
         self, another_client, ter_period_open, student_user, another_student
     ):
         """Test group automatically transitions ouvert → formé when 2nd member joins."""
-        from backend_django.projects.models import GroupInvitation
+        from backend_django.groups.models import GroupInvitation
 
         group = StudentGroup.objects.create(
             name="Test Group",
@@ -1371,7 +1426,7 @@ class TestDeadlineValidation:
 
     def test_accept_invitation_after_deadline_fails(self, another_client, ter_period_formation_ended, student_user, another_student):
         """Test cannot accept invitation after formation deadline."""
-        from backend_django.projects.models import GroupInvitation
+        from backend_django.groups.models import GroupInvitation
 
         # Create group and invitation (simulating pre-deadline creation)
         group = StudentGroup.objects.create(
@@ -1402,7 +1457,7 @@ class TestDeadlineValidation:
 
     def test_decline_invitation_after_deadline_allowed(self, another_client, ter_period_formation_ended, student_user, another_student):
         """Test can still decline invitation after deadline (cleanup)."""
-        from backend_django.projects.models import GroupInvitation, InvitationStatus
+        from backend_django.groups.models import GroupInvitation, InvitationStatus
 
         group = StudentGroup.objects.create(
             name="Test Group",
@@ -1528,7 +1583,7 @@ class TestDashboardEndpoints:
 
     def test_list_solitaires_shows_pending_invitations(self, staff_client, ter_period_open, student_user, another_student):
         """Test solitaires list shows pending invitation count."""
-        from backend_django.projects.models import GroupInvitation
+        from backend_django.groups.models import GroupInvitation
 
         group = StudentGroup.objects.create(
             name="Test Group",

@@ -9,11 +9,11 @@ import pytest
 from django.db import IntegrityError
 from django_fsm import TransitionNotAllowed
 
+from backend_django.groups.models import Group as StudentGroup
+from backend_django.groups.models import GroupStatus
 from backend_django.projects.models import AcademicProjectType
-from backend_django.projects.models import GroupStatus
 from backend_django.projects.models import PeriodStatus
 from backend_django.projects.models import StagePeriod
-from backend_django.projects.models import StudentGroup
 from backend_django.projects.models import TERPeriod
 from backend_django.users.tests.factories import UserFactory
 

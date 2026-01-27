@@ -23,13 +23,13 @@ from backend_django.core.exceptions import NotAuthenticatedError
 from backend_django.core.exceptions import NotFoundError
 from backend_django.core.exceptions import PermissionDeniedError
 from backend_django.core.exceptions import AlreadyExistsError
+from backend_django.groups.models import Group as StudentGroup
+from backend_django.groups.models import GroupInvitation
+from backend_django.groups.models import GroupStatus
+from backend_django.groups.models import InvitationStatus
 from backend_django.projects.models import AcademicProjectType
-from backend_django.projects.models import GroupInvitation
-from backend_django.projects.models import GroupStatus
-from backend_django.projects.models import InvitationStatus
 from backend_django.projects.models import PeriodStatus
 from backend_django.projects.models import StagePeriod
-from backend_django.projects.models import StudentGroup
 from backend_django.projects.models import TERPeriod
 from backend_django.projects.schemas.groups import GroupCreateSchema
 from backend_django.projects.schemas.groups import GroupDetailSchema
@@ -157,14 +157,32 @@ class GroupController(BaseAPI):
         response={200: list[GroupListSchema], 401: ErrorSchema},
         url_name="groups_my",
     )
-    def my_groups(self, request: HttpRequest):
-        """Get groups where current user is a member."""
+    def my_groups(
+        self,
+        request: HttpRequest,
+        ter_period_id: UUID | None = None,
+        stage_period_id: UUID | None = None,
+    ):
+        """
+        Get groups where current user is a member.
+
+        Optional filters:
+        - ter_period_id: Filter by TER period
+        - stage_period_id: Filter by Stage period
+        """
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
         groups = StudentGroup.objects.filter(
             members=request.user
-        ).select_related("leader", "ter_period", "stage_period").order_by("-created")
+        ).select_related("leader", "ter_period", "stage_period")
+
+        if ter_period_id:
+            groups = groups.filter(ter_period_id=ter_period_id)
+        if stage_period_id:
+            groups = groups.filter(stage_period_id=stage_period_id)
+
+        groups = groups.order_by("-created")
 
         return 200, [group_to_list_schema(g) for g in groups]
 

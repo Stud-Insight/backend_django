@@ -439,11 +439,9 @@ from backend_django.stages.models import (  # noqa: F401, E402
     StageFavorite,
 )
 
-# Re-export Group models (Group is the new name for StudentGroup)
-from backend_django.groups.models import (  # noqa: F401, E402
-    Group,
-    StudentGroup,  # Alias for backward compatibility
-    GroupStatus,
-    GroupInvitation,
-    InvitationStatus,
-)
+# NOTE: Group models are NOT re-exported here to avoid Django model conflicts.
+# Import directly from backend_django.groups.models instead:
+#   from backend_django.groups.models import (
+#       Group, GroupStatus, GroupInvitation, InvitationStatus
+#   )
+# The alias StudentGroup = Group is also available in groups.models.
