@@ -89,6 +89,10 @@ LOCAL_APPS = [
     "backend_django.users",
     "backend_django.projects",
     "backend_django.chat",
+    "backend_django.ter",
+    "backend_django.stages",
+    "backend_django.groups",
+    "backend_django.algorithms",
 ]
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

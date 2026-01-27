@@ -6,45 +6,41 @@ import logging
 from datetime import date
 from uuid import UUID
 
-logger = logging.getLogger(__name__)
-
 from django.db.models import Count, Q
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
-from ninja_extra import api_controller
-from ninja_extra import http_get
-from ninja_extra import http_post
+from ninja_extra import api_controller, http_get, http_post
 
-from backend_django.core.api import BaseAPI
-from backend_django.core.api import IsAuthenticated
-from backend_django.core.exceptions import BadRequestError
-from backend_django.core.exceptions import ErrorSchema
-from backend_django.core.exceptions import NotAuthenticatedError
-from backend_django.core.exceptions import NotFoundError
-from backend_django.core.exceptions import PermissionDeniedError
-from backend_django.core.exceptions import AlreadyExistsError
-from backend_django.projects.models import AcademicProjectType
-from backend_django.projects.models import GroupInvitation
-from backend_django.projects.models import GroupStatus
-from backend_django.projects.models import InvitationStatus
-from backend_django.projects.models import PeriodStatus
-from backend_django.projects.models import StagePeriod
-from backend_django.projects.models import StudentGroup
-from backend_django.projects.models import TERPeriod
-from backend_django.projects.schemas.groups import GroupCreateSchema
-from backend_django.projects.schemas.groups import GroupDetailSchema
-from backend_django.projects.schemas.groups import GroupListSchema
-from backend_django.projects.schemas.groups import InvitationCreateSchema
-from backend_django.projects.schemas.groups import InvitationResponseSchema
-from backend_django.projects.schemas.groups import InvitationSchema
-from backend_django.projects.schemas.groups import TransferLeadershipSchema
-from backend_django.projects.schemas.groups import StagePeriodSchema
-from backend_django.projects.schemas.groups import TERPeriodSchema
-from backend_django.projects.schemas.groups import SolitaireSchema
-from backend_django.projects.schemas.groups import DashboardStatsSchema
-from backend_django.projects.schemas.projects import MessageSchema
-from backend_django.projects.schemas.projects import UserMinimalSchema
+from backend_django.core.api import BaseAPI, IsAuthenticated
+from backend_django.core.exceptions import (
+    AlreadyExistsError,
+    BadRequestError,
+    ErrorSchema,
+    NotAuthenticatedError,
+    NotFoundError,
+    PermissionDeniedError,
+)
+from backend_django.groups.models import Group, GroupInvitation, GroupStatus, InvitationStatus
+from backend_django.groups.schemas.groups import (
+    DashboardStatsSchema,
+    GroupCreateSchema,
+    GroupDetailSchema,
+    GroupListSchema,
+    InvitationCreateSchema,
+    InvitationResponseSchema,
+    InvitationSchema,
+    MessageSchema,
+    SolitaireSchema,
+    StagePeriodSchema,
+    TERPeriodSchema,
+    TransferLeadershipSchema,
+    UserMinimalSchema,
+)
+from backend_django.stages.models import PeriodStatus, StagePeriod
+from backend_django.ter.models import TERPeriod
 from backend_django.users.models import User
+
+logger = logging.getLogger(__name__)
 
 
 def ter_period_to_schema(period: TERPeriod) -> TERPeriodSchema:
@@ -73,8 +69,8 @@ def stage_period_to_schema(period: StagePeriod) -> StagePeriodSchema:
     )
 
 
-def group_to_list_schema(group: StudentGroup) -> GroupListSchema:
-    """Convert StudentGroup to list schema."""
+def group_to_list_schema(group: Group) -> GroupListSchema:
+    """Convert Group to list schema."""
     return GroupListSchema(
         id=group.id,
         name=group.name,
@@ -86,8 +82,8 @@ def group_to_list_schema(group: StudentGroup) -> GroupListSchema:
     )
 
 
-def group_to_detail_schema(group: StudentGroup) -> GroupDetailSchema:
-    """Convert StudentGroup to detail schema."""
+def group_to_detail_schema(group: Group) -> GroupDetailSchema:
+    """Convert Group to detail schema."""
     members = [UserMinimalSchema.from_user(m) for m in group.members.all()]
     return GroupDetailSchema(
         id=group.id,
@@ -139,7 +135,7 @@ class GroupController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        groups = StudentGroup.objects.select_related("leader", "ter_period", "stage_period")
+        groups = Group.objects.select_related("leader", "ter_period", "stage_period")
 
         if ter_period_id:
             groups = groups.filter(ter_period_id=ter_period_id)
@@ -162,7 +158,7 @@ class GroupController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        groups = StudentGroup.objects.filter(
+        groups = Group.objects.filter(
             members=request.user
         ).select_related("leader", "ter_period", "stage_period").order_by("-created")
 
@@ -179,7 +175,7 @@ class GroupController(BaseAPI):
             return NotAuthenticatedError().to_response()
 
         group = get_object_or_404(
-            StudentGroup.objects.select_related("leader", "ter_period", "stage_period").prefetch_related("members"),
+            Group.objects.select_related("leader", "ter_period", "stage_period").prefetch_related("members"),
             id=group_id,
         )
 
@@ -202,10 +198,10 @@ class GroupController(BaseAPI):
 
         # Validate that exactly one period is specified
         if data.ter_period_id and data.stage_period_id:
-            return BadRequestError("Spécifiez soit une période TER soit une période Stage, pas les deux.").to_response()
+            return BadRequestError("Specifiez soit une periode TER soit une periode Stage, pas les deux.").to_response()
 
         if not data.ter_period_id and not data.stage_period_id:
-            return BadRequestError("Vous devez spécifier une période TER ou Stage.").to_response()
+            return BadRequestError("Vous devez specifier une periode TER ou Stage.").to_response()
 
         ter_period = None
         stage_period = None
@@ -215,49 +211,49 @@ class GroupController(BaseAPI):
             # TER group creation
             ter_period = TERPeriod.objects.filter(id=data.ter_period_id).first()
             if not ter_period:
-                return NotFoundError("Période TER non trouvée.").to_response()
+                return NotFoundError("Periode TER non trouvee.").to_response()
 
             # Check period is open
             if ter_period.status != PeriodStatus.OPEN:
-                return BadRequestError("La période TER n'est pas ouverte.").to_response()
+                return BadRequestError("La periode TER n'est pas ouverte.").to_response()
 
             # Check we're in formation phase
             today = date.today()
             if not (ter_period.group_formation_start <= today <= ter_period.group_formation_end):
-                return BadRequestError("La période de formation des groupes est terminée.").to_response()
+                return BadRequestError("La periode de formation des groupes est terminee.").to_response()
 
             # Check user doesn't already lead a group for this period
-            existing_group = StudentGroup.objects.filter(
+            existing_group = Group.objects.filter(
                 leader=request.user,
                 ter_period=ter_period,
             ).first()
             if existing_group:
-                return BadRequestError("Vous êtes déjà leader d'un groupe pour cette période TER.").to_response()
+                return BadRequestError("Vous etes deja leader d'un groupe pour cette periode TER.").to_response()
 
-            project_type = AcademicProjectType.SRW
+            project_type = "srw"
 
         elif data.stage_period_id:
             # Stage group creation
             stage_period = StagePeriod.objects.filter(id=data.stage_period_id).first()
             if not stage_period:
-                return NotFoundError("Période Stage non trouvée.").to_response()
+                return NotFoundError("Periode Stage non trouvee.").to_response()
 
             # Check period is open
             if stage_period.status != PeriodStatus.OPEN:
-                return BadRequestError("La période Stage n'est pas ouverte.").to_response()
+                return BadRequestError("La periode Stage n'est pas ouverte.").to_response()
 
             # Check user doesn't already lead a group for this period
-            existing_group = StudentGroup.objects.filter(
+            existing_group = Group.objects.filter(
                 leader=request.user,
                 stage_period=stage_period,
             ).first()
             if existing_group:
-                return BadRequestError("Vous êtes déjà leader d'un groupe pour cette période Stage.").to_response()
+                return BadRequestError("Vous etes deja leader d'un groupe pour cette periode Stage.").to_response()
 
-            project_type = AcademicProjectType.INTERNSHIP
+            project_type = "internship"
 
         # Create the group
-        group = StudentGroup.objects.create(
+        group = Group.objects.create(
             name=data.name,
             leader=request.user,
             project_type=project_type,
@@ -266,7 +262,7 @@ class GroupController(BaseAPI):
         )
 
         # Reload with related data
-        group = StudentGroup.objects.select_related(
+        group = Group.objects.select_related(
             "leader", "ter_period", "stage_period"
         ).prefetch_related("members").get(id=group.id)
 
@@ -289,7 +285,7 @@ class GroupController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        group = get_object_or_404(StudentGroup, id=group_id)
+        group = get_object_or_404(Group, id=group_id)
 
         # Check user is the leader
         if not group.is_leader(request.user):
@@ -303,7 +299,7 @@ class GroupController(BaseAPI):
         if group.ter_period:
             today = date.today()
             if today > group.ter_period.group_formation_end:
-                return BadRequestError("Impossible d'envoyer des invitations après la deadline de formation.").to_response()
+                return BadRequestError("Impossible d'envoyer des invitations apres la deadline de formation.").to_response()
 
         # Check group can accept more members
         if not group.can_add_member():
@@ -312,15 +308,15 @@ class GroupController(BaseAPI):
         # Find the invitee by email
         invitee = User.objects.filter(email=data.invitee_email).first()
         if not invitee:
-            return NotFoundError(f"Aucun utilisateur trouvé avec l'email {data.invitee_email}.").to_response()
+            return NotFoundError(f"Aucun utilisateur trouve avec l'email {data.invitee_email}.").to_response()
 
         # Check invitee is not already a member
         if group.is_member(invitee):
-            return BadRequestError("Cet utilisateur est déjà membre du groupe.").to_response()
+            return BadRequestError("Cet utilisateur est deja membre du groupe.").to_response()
 
         # Check invitee is not the leader
         if group.is_leader(invitee):
-            return BadRequestError("Vous ne pouvez pas vous inviter vous-même.").to_response()
+            return BadRequestError("Vous ne pouvez pas vous inviter vous-meme.").to_response()
 
         # Check no pending invitation exists
         existing = GroupInvitation.objects.filter(
@@ -329,7 +325,7 @@ class GroupController(BaseAPI):
             status=InvitationStatus.PENDING,
         ).first()
         if existing:
-            return AlreadyExistsError("Une invitation est déjà en attente pour cet utilisateur.").to_response()
+            return AlreadyExistsError("Une invitation est deja en attente pour cet utilisateur.").to_response()
 
         # Create invitation
         invitation = GroupInvitation.objects.create(
@@ -360,7 +356,7 @@ class GroupController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        group = get_object_or_404(StudentGroup, id=group_id)
+        group = get_object_or_404(Group, id=group_id)
 
         # Check user is the leader
         if not group.is_leader(request.user):
@@ -409,7 +405,7 @@ class GroupController(BaseAPI):
 
         # Check user is the invitee
         if invitation.invitee_id != request.user.id:
-            return PermissionDeniedError("Vous ne pouvez répondre qu'à vos propres invitations.").to_response()
+            return PermissionDeniedError("Vous ne pouvez repondre qu'a vos propres invitations.").to_response()
 
         # Check invitation is pending
         if not invitation.can_respond():
@@ -421,7 +417,7 @@ class GroupController(BaseAPI):
             if group.ter_period:
                 today = date.today()
                 if today > group.ter_period.group_formation_end:
-                    return BadRequestError("Impossible d'accepter une invitation après la deadline de formation.").to_response()
+                    return BadRequestError("Impossible d'accepter une invitation apres la deadline de formation.").to_response()
 
         try:
             if data.accept:
@@ -447,7 +443,7 @@ class GroupController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        group = get_object_or_404(StudentGroup, id=group_id)
+        group = get_object_or_404(Group, id=group_id)
         invitation = get_object_or_404(GroupInvitation, id=invitation_id, group=group)
 
         # Check user is the leader
@@ -460,7 +456,7 @@ class GroupController(BaseAPI):
 
         invitation.cancel()
 
-        return 200, MessageSchema(success=True, message="Invitation annulée.")
+        return 200, MessageSchema(success=True, message="Invitation annulee.")
 
     # ==================== Member Management Endpoints ====================
 
@@ -474,29 +470,29 @@ class GroupController(BaseAPI):
         Leave a group.
 
         Only non-leader members can leave.
-        Group must not be closed (clôturé).
+        Group must not be closed (cloture).
         """
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        group = get_object_or_404(StudentGroup, id=group_id)
+        group = get_object_or_404(Group, id=group_id)
 
         # Check user is a member
         if not group.is_member(request.user):
-            return BadRequestError("Vous n'êtes pas membre de ce groupe.").to_response()
+            return BadRequestError("Vous n'etes pas membre de ce groupe.").to_response()
 
         # Check user is not the leader
         if group.is_leader(request.user):
-            return BadRequestError("Le leader doit transférer le leadership avant de quitter.").to_response()
+            return BadRequestError("Le leader doit transferer le leadership avant de quitter.").to_response()
 
         # Check group is not closed
         if group.status == GroupStatus.CLOTURE:
-            return BadRequestError("Impossible de quitter un groupe clôturé.").to_response()
+            return BadRequestError("Impossible de quitter un groupe cloture.").to_response()
 
         # Remove user from group
         group.members.remove(request.user)
 
-        # Auto-revert: formé → ouvert when member count drops below 2
+        # Auto-revert: forme -> ouvert when member count drops below 2
         if group.status == GroupStatus.FORME and group.member_count < 2:
             group.reopen_group()
             group.save()
@@ -514,7 +510,7 @@ class GroupController(BaseAPI):
             group.leader.email,
         )
 
-        return 200, MessageSchema(success=True, message="Vous avez quitté le groupe.")
+        return 200, MessageSchema(success=True, message="Vous avez quitte le groupe.")
 
     @http_post(
         "/{group_id}/transfer-leadership",
@@ -532,26 +528,26 @@ class GroupController(BaseAPI):
             return NotAuthenticatedError().to_response()
 
         group = get_object_or_404(
-            StudentGroup.objects.select_related("leader", "ter_period", "stage_period").prefetch_related("members"),
+            Group.objects.select_related("leader", "ter_period", "stage_period").prefetch_related("members"),
             id=group_id,
         )
 
         # Check user is the leader
         if not group.is_leader(request.user):
-            return PermissionDeniedError("Seul le leader peut transférer le leadership.").to_response()
+            return PermissionDeniedError("Seul le leader peut transferer le leadership.").to_response()
 
         # Find the new leader
         new_leader = User.objects.filter(id=data.new_leader_id).first()
         if not new_leader:
-            return NotFoundError("Utilisateur non trouvé.").to_response()
+            return NotFoundError("Utilisateur non trouve.").to_response()
 
         # Check new leader is a member
         if not group.is_member(new_leader):
-            return BadRequestError("Le nouveau leader doit être membre du groupe.").to_response()
+            return BadRequestError("Le nouveau leader doit etre membre du groupe.").to_response()
 
         # Check not transferring to self
         if new_leader.id == request.user.id:
-            return BadRequestError("Vous êtes déjà le leader.").to_response()
+            return BadRequestError("Vous etes deja le leader.").to_response()
 
         # Transfer leadership
         old_leader = group.leader
@@ -567,7 +563,7 @@ class GroupController(BaseAPI):
         )
 
         # Reload group
-        group = StudentGroup.objects.select_related(
+        group = Group.objects.select_related(
             "leader", "ter_period", "stage_period"
         ).prefetch_related("members").get(id=group.id)
 
@@ -580,17 +576,17 @@ class GroupController(BaseAPI):
     )
     def close_group(self, request: HttpRequest, group_id: UUID):
         """
-        Close a group (formé → clôturé).
+        Close a group (forme -> cloture).
 
         Only the leader can close a group.
-        Group must be in "formé" status (has 2+ members).
+        Group must be in "forme" status (has 2+ members).
         Once closed, no members can join or leave.
         """
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
         group = get_object_or_404(
-            StudentGroup.objects.select_related("leader", "ter_period", "stage_period").prefetch_related("members"),
+            Group.objects.select_related("leader", "ter_period", "stage_period").prefetch_related("members"),
             id=group_id,
         )
 
@@ -598,14 +594,14 @@ class GroupController(BaseAPI):
         if not group.is_leader(request.user):
             return PermissionDeniedError("Seul le leader peut fermer le groupe.").to_response()
 
-        # Check group is in formé status
+        # Check group is in forme status
         if group.status == GroupStatus.OUVERT:
-            return BadRequestError("Le groupe doit avoir au moins 2 membres pour être clôturé.").to_response()
+            return BadRequestError("Le groupe doit avoir au moins 2 membres pour etre cloture.").to_response()
 
         if group.status == GroupStatus.CLOTURE:
-            return BadRequestError("Le groupe est déjà clôturé.").to_response()
+            return BadRequestError("Le groupe est deja cloture.").to_response()
 
-        # Transition to clôturé
+        # Transition to cloture
         try:
             group.close_group()
             group.save()
@@ -620,7 +616,7 @@ class GroupController(BaseAPI):
         )
 
         # Reload group
-        group = StudentGroup.objects.select_related(
+        group = Group.objects.select_related(
             "leader", "ter_period", "stage_period"
         ).prefetch_related("members").get(id=group.id)
 
@@ -643,12 +639,12 @@ class GroupController(BaseAPI):
             return NotAuthenticatedError().to_response()
 
         if not request.user.is_staff:
-            return PermissionDeniedError("Réservé au personnel.").to_response()
+            return PermissionDeniedError("Reserve au personnel.").to_response()
 
         ter_period = get_object_or_404(TERPeriod, id=ter_period_id)
 
         # Get all groups for this period
-        groups = StudentGroup.objects.filter(ter_period=ter_period)
+        groups = Group.objects.filter(ter_period=ter_period)
 
         # Count by status
         groups_by_status = {
@@ -697,7 +693,7 @@ class GroupController(BaseAPI):
             return NotAuthenticatedError().to_response()
 
         if not request.user.is_staff:
-            return PermissionDeniedError("Réservé au personnel.").to_response()
+            return PermissionDeniedError("Reserve au personnel.").to_response()
 
         ter_period = get_object_or_404(TERPeriod, id=ter_period_id)
 
@@ -707,7 +703,6 @@ class GroupController(BaseAPI):
         ).values_list("id", flat=True)
 
         # Get all active non-staff users NOT in any group for this period
-        # Use annotate to count pending invitations in a single query (avoid N+1)
         solitaires = User.objects.filter(
             is_active=True,
             is_staff=False,
@@ -727,8 +722,8 @@ class GroupController(BaseAPI):
             SolitaireSchema(
                 id=user.id,
                 email=user.email,
-                first_name=user.first_name,
-                last_name=user.last_name,
+                first_name=user.first_name or "",
+                last_name=user.last_name or "",
                 pending_invitations=user.pending_invitations,
             )
             for user in solitaires
@@ -749,12 +744,12 @@ class GroupController(BaseAPI):
             return NotAuthenticatedError().to_response()
 
         if not request.user.is_staff:
-            return PermissionDeniedError("Réservé au personnel.").to_response()
+            return PermissionDeniedError("Reserve au personnel.").to_response()
 
         ter_period = get_object_or_404(TERPeriod, id=ter_period_id)
 
         # Get groups with <2 members
-        incomplete_groups = StudentGroup.objects.filter(
+        incomplete_groups = Group.objects.filter(
             ter_period=ter_period
         ).annotate(
             members_count=Count("members")

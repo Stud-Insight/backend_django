@@ -8,7 +8,24 @@ from uuid import UUID
 from ninja import Schema
 from pydantic import field_validator
 
-from backend_django.projects.schemas.projects import UserMinimalSchema
+
+class UserMinimalSchema(Schema):
+    """Minimal user information for display."""
+
+    id: UUID
+    email: str
+    first_name: str
+    last_name: str
+
+    @classmethod
+    def from_user(cls, user) -> "UserMinimalSchema":
+        """Create from User model instance."""
+        return cls(
+            id=user.id,
+            email=user.email,
+            first_name=user.first_name or "",
+            last_name=user.last_name or "",
+        )
 
 
 class TERPeriodSchema(Schema):
@@ -69,7 +86,7 @@ class GroupCreateSchema(Schema):
         if not v or not v.strip():
             raise ValueError("Le nom du groupe est requis.")
         if len(v.strip()) < 3:
-            raise ValueError("Le nom du groupe doit faire au moins 3 caractères.")
+            raise ValueError("Le nom du groupe doit faire au moins 3 caracteres.")
         return v.strip()
 
 
@@ -83,9 +100,9 @@ class GroupUpdateSchema(Schema):
     def name_not_empty(cls, v: str | None) -> str | None:
         if v is not None:
             if not v.strip():
-                raise ValueError("Le nom du groupe ne peut pas être vide.")
+                raise ValueError("Le nom du groupe ne peut pas etre vide.")
             if len(v.strip()) < 3:
-                raise ValueError("Le nom du groupe doit faire au moins 3 caractères.")
+                raise ValueError("Le nom du groupe doit faire au moins 3 caracteres.")
             return v.strip()
         return v
 
@@ -151,3 +168,10 @@ class DashboardStatsSchema(Schema):
     total_solitaires: int
     groups_by_status: dict[str, int]
     incomplete_groups_count: int
+
+
+class MessageSchema(Schema):
+    """Simple message response schema."""
+
+    success: bool
+    message: str

@@ -32,6 +32,37 @@ from backend_django.projects.schemas.groups import TransferLeadershipSchema
 from backend_django.projects.schemas.groups import StagePeriodSchema
 from backend_django.projects.schemas.groups import TERPeriodSchema
 
+# Re-export new TER schemas
+from backend_django.ter.schemas import (  # noqa: E402
+    TERPeriodDetailSchema,
+    TERPeriodCreateSchema,
+    TERPeriodUpdateSchema,
+    TERPeriodCopySchema,
+    TERSubjectListSchema,
+    TERSubjectDetailSchema,
+    TERSubjectCreateSchema,
+    TERSubjectUpdateSchema,
+    TERFavoriteSchema,
+    TERRankingItemSchema,
+    TERRankingListSchema,
+    TERRankingCreateSchema,
+)
+
+# Re-export new Stage schemas
+from backend_django.stages.schemas import (  # noqa: E402
+    StagePeriodDetailSchema,
+    StagePeriodCreateSchema,
+    StagePeriodUpdateSchema,
+    StageOfferListSchema,
+    StageOfferDetailSchema,
+    StageOfferCreateSchema,
+    StageOfferUpdateSchema,
+    StageFavoriteSchema,
+    StageRankingItemSchema,
+    StageRankingListSchema,
+    StageRankingCreateSchema,
+)
+
 __all__ = [
     # Attachments (legacy)
     "AttachmentSchema",
@@ -69,4 +100,29 @@ __all__ = [
     "InvitationResponseSchema",
     # Leadership
     "TransferLeadershipSchema",
+    # New TER schemas
+    "TERPeriodDetailSchema",
+    "TERPeriodCreateSchema",
+    "TERPeriodUpdateSchema",
+    "TERPeriodCopySchema",
+    "TERSubjectListSchema",
+    "TERSubjectDetailSchema",
+    "TERSubjectCreateSchema",
+    "TERSubjectUpdateSchema",
+    "TERFavoriteSchema",
+    "TERRankingItemSchema",
+    "TERRankingListSchema",
+    "TERRankingCreateSchema",
+    # New Stage schemas
+    "StagePeriodDetailSchema",
+    "StagePeriodCreateSchema",
+    "StagePeriodUpdateSchema",
+    "StageOfferListSchema",
+    "StageOfferDetailSchema",
+    "StageOfferCreateSchema",
+    "StageOfferUpdateSchema",
+    "StageFavoriteSchema",
+    "StageRankingItemSchema",
+    "StageRankingListSchema",
+    "StageRankingCreateSchema",
 ]
