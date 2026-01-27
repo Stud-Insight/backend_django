@@ -122,3 +122,4 @@ class CSVImportResultSchema(Schema):
     error_count: int
     errors: list[CSVImportErrorSchema]
     created_users: list[UserListSchema]
+    enrolled_in_ter_period: str | None = None  # TER period name if enrolled

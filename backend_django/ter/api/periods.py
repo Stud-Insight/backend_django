@@ -17,14 +17,17 @@ from backend_django.core.exceptions import (
     NotFoundError,
     PermissionDeniedError,
 )
-from backend_django.ter.models import PeriodStatus, TERPeriod
+from backend_django.groups.models import Group
+from backend_django.ter.models import PeriodStatus, SubjectStatus, TERPeriod, TERSubject
 from backend_django.ter.schemas.periods import (
     TERPeriodCopySchema,
     TERPeriodCreateSchema,
     TERPeriodDetailSchema,
     TERPeriodSchema,
+    TERPeriodStatsSchema,
     TERPeriodUpdateSchema,
 )
+from backend_django.users.models import User
 
 
 # ==================== Helper Functions ====================
@@ -347,3 +350,75 @@ class TERPeriodController(BaseAPI):
         )
 
         return 201, ter_period_to_detail_schema(new_period)
+
+    @http_get(
+        "/{period_id}/stats",
+        response={200: TERPeriodStatsSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="ter_periods_stats",
+    )
+    def get_period_stats(self, request: HttpRequest, period_id: UUID):
+        """
+        Get statistics for a TER period dashboard.
+
+        Returns counts for:
+        - Enrolled students, students in groups, solitaires
+        - Total groups, complete groups, assigned groups
+        - Total subjects, validated subjects, assignments
+
+        Only staff members (Respo TER) can view stats.
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        if not request.user.is_staff:
+            return PermissionDeniedError(
+                "Seuls les responsables TER peuvent consulter les statistiques."
+            ).to_response()
+
+        period = get_object_or_404(TERPeriod, id=period_id)
+
+        # Enrolled students
+        students_enrolled = period.enrolled_students.count()
+
+        # Students in groups for this period
+        students_in_groups_ids = User.objects.filter(
+            student_groups__ter_period=period
+        ).distinct().values_list("id", flat=True)
+        students_in_groups = len(students_in_groups_ids)
+
+        # Solitaires = enrolled but not in any group
+        students_solitaires = period.enrolled_students.exclude(
+            id__in=students_in_groups_ids
+        ).count()
+
+        # Groups for this period
+        groups = Group.objects.filter(ter_period=period)
+        groups_total = groups.count()
+
+        # Complete groups (member count >= min_group_size)
+        groups_complete = sum(
+            1 for g in groups if g.member_count >= period.min_group_size
+        )
+
+        # Assigned groups (have an assigned subject)
+        groups_assigned = groups.filter(assigned_subject__isnull=False).count()
+
+        # Subjects for this period
+        subjects = TERSubject.objects.filter(ter_period=period)
+        subjects_total = subjects.count()
+        subjects_validated = subjects.filter(status=SubjectStatus.VALIDATED).count()
+
+        # Total assignments = groups with assigned subjects
+        subjects_assigned = groups_assigned
+
+        return 200, TERPeriodStatsSchema(
+            students_enrolled=students_enrolled,
+            students_in_groups=students_in_groups,
+            students_solitaires=students_solitaires,
+            groups_total=groups_total,
+            groups_complete=groups_complete,
+            groups_assigned=groups_assigned,
+            subjects_total=subjects_total,
+            subjects_validated=subjects_validated,
+            subjects_assigned=subjects_assigned,
+        )

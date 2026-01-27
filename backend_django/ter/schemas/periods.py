@@ -186,3 +186,22 @@ class TERPeriodCopySchema(Schema):
                 raise ValueError("Format attendu: 2024-2025")
             raise
         return v
+
+
+class TERPeriodStatsSchema(Schema):
+    """Statistics for a TER period dashboard."""
+
+    # Enrolled students
+    students_enrolled: int  # Total enrolled in period
+    students_in_groups: int  # Students who joined a group
+    students_solitaires: int  # Enrolled but no group
+
+    # Groups
+    groups_total: int  # Total groups created
+    groups_complete: int  # Groups with size >= min_group_size
+    groups_assigned: int  # Groups with assigned subject
+
+    # Subjects
+    subjects_total: int  # All subjects for period
+    subjects_validated: int  # Validated subjects available
+    subjects_assigned: int  # Total assignments (groups with subjects)

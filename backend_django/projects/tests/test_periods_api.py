@@ -112,16 +112,16 @@ def staff_client(client: Client, staff_user):
 
 @pytest.mark.django_db
 class TestListTERPeriodsEndpoint:
-    """Tests for GET /api/ter-periods/."""
+    """Tests for GET /api/ter/periods/."""
 
     def test_unauthenticated_denied(self, client: Client):
         """Test unauthenticated access is denied."""
-        response = client.get("/api/ter-periods/")
+        response = client.get("/api/ter/periods/")
         assert response.status_code == 403
 
     def test_list_ter_periods_student(self, authenticated_client, ter_period_open, ter_period_draft):
         """Test student only sees open periods."""
-        response = authenticated_client.get("/api/ter-periods/")
+        response = authenticated_client.get("/api/ter/periods/")
         assert response.status_code == 200
 
         data = response.json()
@@ -131,7 +131,7 @@ class TestListTERPeriodsEndpoint:
 
     def test_list_ter_periods_staff_sees_all(self, staff_client, ter_period_open, ter_period_draft):
         """Test staff sees all periods."""
-        response = staff_client.get("/api/ter-periods/")
+        response = staff_client.get("/api/ter/periods/")
         assert response.status_code == 200
 
         data = response.json()
@@ -143,7 +143,7 @@ class TestListTERPeriodsEndpoint:
 
     def test_filter_by_status(self, staff_client, ter_period_open, ter_period_draft):
         """Test staff can filter by status."""
-        response = staff_client.get("/api/ter-periods/?status=draft")
+        response = staff_client.get("/api/ter/periods/?status=draft")
         assert response.status_code == 200
 
         data = response.json()
@@ -152,7 +152,7 @@ class TestListTERPeriodsEndpoint:
 
     def test_filter_by_academic_year(self, staff_client, ter_period_open, ter_period_draft):
         """Test filtering by academic year."""
-        response = staff_client.get("/api/ter-periods/?academic_year=2024-2025")
+        response = staff_client.get("/api/ter/periods/?academic_year=2024-2025")
         assert response.status_code == 200
 
         data = response.json()
@@ -161,7 +161,7 @@ class TestListTERPeriodsEndpoint:
 
     def test_response_schema(self, authenticated_client, ter_period_open):
         """Test response contains expected fields."""
-        response = authenticated_client.get("/api/ter-periods/")
+        response = authenticated_client.get("/api/ter/periods/")
         assert response.status_code == 200
 
         data = response.json()
@@ -180,11 +180,11 @@ class TestListTERPeriodsEndpoint:
 
 @pytest.mark.django_db
 class TestGetTERPeriodEndpoint:
-    """Tests for GET /api/ter-periods/{id}."""
+    """Tests for GET /api/ter/periods/{id}."""
 
     def test_get_ter_period_detail(self, authenticated_client, ter_period_open):
         """Test getting TER period details."""
-        response = authenticated_client.get(f"/api/ter-periods/{ter_period_open.id}")
+        response = authenticated_client.get(f"/api/ter/periods/{ter_period_open.id}")
         assert response.status_code == 200
 
         data = response.json()
@@ -193,12 +193,12 @@ class TestGetTERPeriodEndpoint:
 
     def test_student_cannot_see_draft_period(self, authenticated_client, ter_period_draft):
         """Test student cannot access draft period."""
-        response = authenticated_client.get(f"/api/ter-periods/{ter_period_draft.id}")
+        response = authenticated_client.get(f"/api/ter/periods/{ter_period_draft.id}")
         assert response.status_code == 404
 
     def test_staff_can_see_draft_period(self, staff_client, ter_period_draft):
         """Test staff can access draft period."""
-        response = staff_client.get(f"/api/ter-periods/{ter_period_draft.id}")
+        response = staff_client.get(f"/api/ter/periods/{ter_period_draft.id}")
         assert response.status_code == 200
 
         data = response.json()
@@ -207,7 +207,7 @@ class TestGetTERPeriodEndpoint:
     def test_nonexistent_period(self, authenticated_client):
         """Test 404 for non-existent period."""
         fake_uuid = "00000000-0000-0000-0000-000000000000"
-        response = authenticated_client.get(f"/api/ter-periods/{fake_uuid}")
+        response = authenticated_client.get(f"/api/ter/periods/{fake_uuid}")
         assert response.status_code == 404
 
 
@@ -216,11 +216,11 @@ class TestGetTERPeriodEndpoint:
 
 @pytest.mark.django_db
 class TestListStagePeriodsEndpoint:
-    """Tests for GET /api/stage-periods/."""
+    """Tests for GET /api/stages/periods/."""
 
     def test_list_stage_periods(self, authenticated_client, stage_period_open):
         """Test listing stage periods."""
-        response = authenticated_client.get("/api/stage-periods/")
+        response = authenticated_client.get("/api/stages/periods/")
         assert response.status_code == 200
 
         data = response.json()
@@ -229,7 +229,7 @@ class TestListStagePeriodsEndpoint:
 
     def test_response_schema(self, authenticated_client, stage_period_open):
         """Test response contains expected fields."""
-        response = authenticated_client.get("/api/stage-periods/")
+        response = authenticated_client.get("/api/stages/periods/")
         assert response.status_code == 200
 
         data = response.json()
@@ -244,11 +244,11 @@ class TestListStagePeriodsEndpoint:
 
 @pytest.mark.django_db
 class TestGetStagePeriodEndpoint:
-    """Tests for GET /api/stage-periods/{id}."""
+    """Tests for GET /api/stages/periods/{id}."""
 
     def test_get_stage_period_detail(self, authenticated_client, stage_period_open):
         """Test getting Stage period details."""
-        response = authenticated_client.get(f"/api/stage-periods/{stage_period_open.id}")
+        response = authenticated_client.get(f"/api/stages/periods/{stage_period_open.id}")
         assert response.status_code == 200
 
         data = response.json()
@@ -279,7 +279,7 @@ def valid_ter_period_data():
 
 @pytest.mark.django_db
 class TestCreateTERPeriodEndpoint:
-    """Tests for POST /api/ter-periods/."""
+    """Tests for POST /api/ter/periods/."""
 
     def test_staff_can_create_ter_period(self, staff_client, valid_ter_period_data):
         """Test staff can create a TER period."""
@@ -287,7 +287,7 @@ class TestCreateTERPeriodEndpoint:
         csrf_token = response.json()["csrf_token"]
 
         response = staff_client.post(
-            "/api/ter-periods/",
+            "/api/ter/periods/",
             data=valid_ter_period_data,
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf_token,
@@ -307,7 +307,7 @@ class TestCreateTERPeriodEndpoint:
         csrf_token = response.json()["csrf_token"]
 
         response = authenticated_client.post(
-            "/api/ter-periods/",
+            "/api/ter/periods/",
             data=valid_ter_period_data,
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf_token,
@@ -333,13 +333,13 @@ class TestCreateTERPeriodEndpoint:
         }
 
         response = staff_client.post(
-            "/api/ter-periods/",
+            "/api/ter/periods/",
             data=duplicate_data,
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf_token,
         )
         assert response.status_code == 400
-        assert "existe déjà" in response.json()["message"]
+        assert "existe deja" in response.json()["message"]
 
     def test_invalid_academic_year_format(self, staff_client):
         """Test invalid academic year format is rejected."""
@@ -360,7 +360,7 @@ class TestCreateTERPeriodEndpoint:
         }
 
         response = staff_client.post(
-            "/api/ter-periods/",
+            "/api/ter/periods/",
             data=invalid_data,
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf_token,
@@ -370,7 +370,7 @@ class TestCreateTERPeriodEndpoint:
 
 @pytest.mark.django_db
 class TestUpdateTERPeriodEndpoint:
-    """Tests for PUT /api/ter-periods/{id}."""
+    """Tests for PUT /api/ter/periods/{id}."""
 
     def test_staff_can_update_draft_period(self, staff_client, ter_period_draft):
         """Test staff can update a draft period."""
@@ -378,7 +378,7 @@ class TestUpdateTERPeriodEndpoint:
         csrf_token = response.json()["csrf_token"]
 
         response = staff_client.put(
-            f"/api/ter-periods/{ter_period_draft.id}",
+            f"/api/ter/periods/{ter_period_draft.id}",
             data={"name": "Updated Name"},
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf_token,
@@ -394,7 +394,7 @@ class TestUpdateTERPeriodEndpoint:
         csrf_token = response.json()["csrf_token"]
 
         response = staff_client.put(
-            f"/api/ter-periods/{ter_period_open.id}",
+            f"/api/ter/periods/{ter_period_open.id}",
             data={"name": "Should Fail"},
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf_token,
@@ -408,7 +408,7 @@ class TestUpdateTERPeriodEndpoint:
         csrf_token = response.json()["csrf_token"]
 
         response = authenticated_client.put(
-            f"/api/ter-periods/{ter_period_draft.id}",
+            f"/api/ter/periods/{ter_period_draft.id}",
             data={"name": "Should Fail"},
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf_token,
@@ -426,7 +426,7 @@ class TestTERPeriodStatusTransitions:
         csrf_token = response.json()["csrf_token"]
 
         response = staff_client.post(
-            f"/api/ter-periods/{ter_period_draft.id}/open",
+            f"/api/ter/periods/{ter_period_draft.id}/open",
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf_token,
         )
@@ -441,7 +441,7 @@ class TestTERPeriodStatusTransitions:
         csrf_token = response.json()["csrf_token"]
 
         response = staff_client.post(
-            f"/api/ter-periods/{ter_period_open.id}/open",
+            f"/api/ter/periods/{ter_period_open.id}/open",
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf_token,
         )
@@ -453,7 +453,7 @@ class TestTERPeriodStatusTransitions:
         csrf_token = response.json()["csrf_token"]
 
         response = staff_client.post(
-            f"/api/ter-periods/{ter_period_open.id}/close",
+            f"/api/ter/periods/{ter_period_open.id}/close",
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf_token,
         )
@@ -468,7 +468,7 @@ class TestTERPeriodStatusTransitions:
         csrf_token = response.json()["csrf_token"]
 
         response = staff_client.post(
-            f"/api/ter-periods/{ter_period_draft.id}/close",
+            f"/api/ter/periods/{ter_period_draft.id}/close",
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf_token,
         )
@@ -480,7 +480,7 @@ class TestTERPeriodStatusTransitions:
         csrf_token = response.json()["csrf_token"]
 
         response = authenticated_client.post(
-            f"/api/ter-periods/{ter_period_draft.id}/open",
+            f"/api/ter/periods/{ter_period_draft.id}/open",
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf_token,
         )
@@ -489,7 +489,7 @@ class TestTERPeriodStatusTransitions:
 
 @pytest.mark.django_db
 class TestCopyTERPeriodEndpoint:
-    """Tests for POST /api/ter-periods/{id}/copy."""
+    """Tests for POST /api/ter/periods/{id}/copy."""
 
     def test_staff_can_copy_period(self, staff_client, ter_period_open):
         """Test staff can copy a TER period to a new academic year."""
@@ -502,7 +502,7 @@ class TestCopyTERPeriodEndpoint:
         }
 
         response = staff_client.post(
-            f"/api/ter-periods/{ter_period_open.id}/copy",
+            f"/api/ter/periods/{ter_period_open.id}/copy",
             data=copy_data,
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf_token,
@@ -527,7 +527,7 @@ class TestCopyTERPeriodEndpoint:
         }
 
         response = staff_client.post(
-            f"/api/ter-periods/{ter_period_open.id}/copy",
+            f"/api/ter/periods/{ter_period_open.id}/copy",
             data=copy_data,
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf_token,
@@ -560,7 +560,7 @@ class TestCopyTERPeriodEndpoint:
         }
 
         response = authenticated_client.post(
-            f"/api/ter-periods/{ter_period_open.id}/copy",
+            f"/api/ter/periods/{ter_period_open.id}/copy",
             data=copy_data,
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf_token,
@@ -592,13 +592,13 @@ class TestCopyTERPeriodEndpoint:
         }
 
         response = staff_client.post(
-            f"/api/ter-periods/{ter_period_open.id}/copy",
+            f"/api/ter/periods/{ter_period_open.id}/copy",
             data=copy_data,
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf_token,
         )
         assert response.status_code == 400
-        assert "existe déjà" in response.json()["message"]
+        assert "existe deja" in response.json()["message"]
 
     def test_copy_nonexistent_period_returns_404(self, staff_client):
         """Test copying a nonexistent period returns 404."""
@@ -613,7 +613,7 @@ class TestCopyTERPeriodEndpoint:
         }
 
         response = staff_client.post(
-            f"/api/ter-periods/{uuid.uuid4()}/copy",
+            f"/api/ter/periods/{uuid.uuid4()}/copy",
             data=copy_data,
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf_token,
@@ -631,7 +631,7 @@ class TestCopyTERPeriodEndpoint:
         }
 
         response = staff_client.post(
-            f"/api/ter-periods/{ter_period_open.id}/copy",
+            f"/api/ter/periods/{ter_period_open.id}/copy",
             data=copy_data,
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf_token,
@@ -649,7 +649,7 @@ class TestCopyTERPeriodEndpoint:
         }
 
         response = staff_client.post(
-            f"/api/ter-periods/{ter_period_open.id}/copy",
+            f"/api/ter/periods/{ter_period_open.id}/copy",
             data=copy_data,
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf_token,
@@ -683,7 +683,7 @@ class TestCopyTERPeriodEndpoint:
         }
 
         response = staff_client.post(
-            f"/api/ter-periods/{source.id}/copy",
+            f"/api/ter/periods/{source.id}/copy",
             data=copy_data,
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf_token,
@@ -705,10 +705,136 @@ class TestCopyTERPeriodEndpoint:
         }
 
         response = client.post(
-            f"/api/ter-periods/{ter_period_open.id}/copy",
+            f"/api/ter/periods/{ter_period_open.id}/copy",
             data=copy_data,
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf_token,
         )
         # Controller has IsAuthenticated permission, so unauthenticated gets 403
         assert response.status_code == 403
+
+
+# ==================== TER Period Stats Tests ====================
+
+
+@pytest.fixture
+def enrolled_students(db, ter_period_open):
+    """Create students enrolled in the TER period."""
+    students = []
+    for i in range(5):
+        student = User.objects.create_user(
+            email=f"enrolled{i}@test.fr",
+            password="testpass123",
+            first_name=f"Enrolled{i}",
+            last_name="Student",
+            is_active=True,
+        )
+        students.append(student)
+        ter_period_open.enrolled_students.add(student)
+    return students
+
+
+@pytest.fixture
+def group_with_members(db, ter_period_open, enrolled_students):
+    """Create a group with some enrolled students."""
+    from backend_django.groups.models import Group
+
+    group = Group.objects.create(
+        name="Test Group",
+        leader=enrolled_students[0],
+        ter_period=ter_period_open,
+    )
+    # Add first 3 students to the group
+    group.members.add(enrolled_students[0], enrolled_students[1], enrolled_students[2])
+    return group
+
+
+@pytest.fixture
+def ter_subject_validated(db, ter_period_open, staff_user):
+    """Create a validated TER subject."""
+    from backend_django.ter.models import TERSubject, SubjectStatus
+
+    return TERSubject.objects.create(
+        ter_period=ter_period_open,
+        title="Test Subject",
+        description="A test subject",
+        domain="Test",
+        professor=staff_user,
+        status=SubjectStatus.VALIDATED,
+    )
+
+
+@pytest.mark.django_db
+class TestTERPeriodStatsEndpoint:
+    """Tests for GET /api/ter/periods/{id}/stats."""
+
+    def test_staff_can_view_stats(self, staff_client, ter_period_open):
+        """Test staff can view period stats."""
+        response = staff_client.get(f"/api/ter/periods/{ter_period_open.id}/stats")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert "students_enrolled" in data
+        assert "students_in_groups" in data
+        assert "students_solitaires" in data
+        assert "groups_total" in data
+        assert "groups_complete" in data
+        assert "groups_assigned" in data
+        assert "subjects_total" in data
+        assert "subjects_validated" in data
+        assert "subjects_assigned" in data
+
+    def test_student_cannot_view_stats(self, authenticated_client, ter_period_open):
+        """Test student cannot view period stats."""
+        response = authenticated_client.get(f"/api/ter/periods/{ter_period_open.id}/stats")
+        assert response.status_code == 403
+
+    def test_stats_counts_enrolled_students(
+        self, staff_client, ter_period_open, enrolled_students
+    ):
+        """Test stats correctly counts enrolled students."""
+        response = staff_client.get(f"/api/ter/periods/{ter_period_open.id}/stats")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["students_enrolled"] == 5
+
+    def test_stats_counts_students_in_groups(
+        self, staff_client, ter_period_open, enrolled_students, group_with_members
+    ):
+        """Test stats correctly counts students in groups."""
+        response = staff_client.get(f"/api/ter/periods/{ter_period_open.id}/stats")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["students_in_groups"] == 3  # 3 members in group
+        assert data["students_solitaires"] == 2  # 5 enrolled - 3 in group
+
+    def test_stats_counts_groups(
+        self, staff_client, ter_period_open, group_with_members
+    ):
+        """Test stats correctly counts groups."""
+        response = staff_client.get(f"/api/ter/periods/{ter_period_open.id}/stats")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["groups_total"] == 1
+        # Group has 3 members, min_group_size is 1, so it's complete
+        assert data["groups_complete"] == 1
+
+    def test_stats_counts_subjects(
+        self, staff_client, ter_period_open, ter_subject_validated
+    ):
+        """Test stats correctly counts subjects."""
+        response = staff_client.get(f"/api/ter/periods/{ter_period_open.id}/stats")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["subjects_total"] == 1
+        assert data["subjects_validated"] == 1
+
+    def test_stats_nonexistent_period(self, staff_client):
+        """Test 404 for non-existent period."""
+        fake_uuid = "00000000-0000-0000-0000-000000000000"
+        response = staff_client.get(f"/api/ter/periods/{fake_uuid}/stats")
+        assert response.status_code == 404

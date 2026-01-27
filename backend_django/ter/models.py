@@ -126,6 +126,15 @@ class TERPeriod(BaseModel):
         default=4,
     )
 
+    # Enrolled students for this period
+    enrolled_students = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        related_name="enrolled_ter_periods",
+        blank=True,
+        verbose_name=_("enrolled students"),
+        help_text=_("Students registered for this TER period"),
+    )
+
     class Meta:
         verbose_name = _("TER period")
         verbose_name_plural = _("TER periods")

@@ -5,6 +5,7 @@ from .periods import (
     TERPeriodCreateSchema,
     TERPeriodDetailSchema,
     TERPeriodSchema,
+    TERPeriodStatsSchema,
     TERPeriodUpdateSchema,
 )
 from .rankings import (
@@ -28,6 +29,7 @@ __all__ = [
     "TERPeriodCreateSchema",
     "TERPeriodUpdateSchema",
     "TERPeriodCopySchema",
+    "TERPeriodStatsSchema",
     # Subjects
     "TERSubjectListSchema",
     "TERSubjectDetailSchema",

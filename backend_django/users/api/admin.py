@@ -29,6 +29,7 @@ from backend_django.core.exceptions import PermissionDeniedError
 from backend_django.core.exceptions import ValidationError
 from backend_django.core.roles import Role
 from backend_django.core.roles import ROLE_DESCRIPTIONS
+from backend_django.ter.models import TERPeriod
 from backend_django.users.models import User
 from backend_django.users.schemas import CSVImportErrorSchema
 from backend_django.users.schemas import CSVImportResultSchema
@@ -140,10 +141,15 @@ class UserAdminController(BaseAPI):
 
     @http_post(
         "/import-csv",
-        response={200: CSVImportResultSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema},
+        response={200: CSVImportResultSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
         url_name="users_import_csv",
     )
-    def import_users_csv(self, request: HttpRequest, file: UploadedFile = File(...)):
+    def import_users_csv(
+        self,
+        request: HttpRequest,
+        file: UploadedFile = File(...),
+        ter_period_id: UUID | None = None,
+    ):
         """
         Import users from a CSV file.
 
@@ -152,10 +158,14 @@ class UserAdminController(BaseAPI):
         - first_name: Required
         - last_name: Optional
 
+        Query parameters:
+        - ter_period_id: Optional UUID to enroll imported students in a TER period
+
         Users are created with:
         - is_active=False (requires email verification)
         - Role "Etudiant" assigned by default
         - Activation email sent automatically
+        - If ter_period_id provided, enrolled in that TER period
 
         Returns a summary with created users, skipped (duplicates), and errors.
         """
@@ -164,6 +174,14 @@ class UserAdminController(BaseAPI):
 
         if not request.user.is_staff:
             return PermissionDeniedError("Permission staff requise.").to_response()
+
+        # Validate TER period if provided
+        ter_period = None
+        if ter_period_id:
+            try:
+                ter_period = TERPeriod.objects.get(id=ter_period_id)
+            except TERPeriod.DoesNotExist:
+                return NotFoundError("Période TER introuvable.").to_response()
 
         # Read and decode file
         try:
@@ -304,6 +322,13 @@ class UserAdminController(BaseAPI):
                     error=f"Erreur de création: {e!s}",
                 ))
 
+        # Enroll created users in TER period if specified
+        if ter_period and created_users:
+            ter_period.enrolled_students.add(*created_users)
+            logger.info(
+                f"Enrolled {len(created_users)} students in TER period {ter_period.name}"
+            )
+
         return 200, CSVImportResultSchema(
             success=len(errors) == 0,
             created_count=len(created_users),
@@ -311,6 +336,7 @@ class UserAdminController(BaseAPI):
             error_count=len(errors),
             errors=errors,
             created_users=[UserListSchema.from_user(u) for u in created_users],
+            enrolled_in_ter_period=ter_period.name if ter_period else None,
         )
 
     @http_get(

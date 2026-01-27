@@ -403,3 +403,142 @@ student@test.fr,Jean,Dupont
         assert data["created_users"][0]["email"] == "student@test.fr"
         assert data["created_users"][0]["first_name"] == "Jean"
         assert "id" in data["created_users"][0]
+
+
+# ==================== CSV Import with TER Period Tests ====================
+
+
+@pytest.fixture
+def ter_period(db):
+    """Create a TER period."""
+    from datetime import date, timedelta
+    from backend_django.ter.models import TERPeriod, PeriodStatus
+
+    today = date.today()
+    return TERPeriod.objects.create(
+        name="TER 2024-2025",
+        academic_year="2024-2025",
+        status=PeriodStatus.OPEN,
+        group_formation_start=today,
+        group_formation_end=today + timedelta(days=30),
+        subject_selection_start=today + timedelta(days=31),
+        subject_selection_end=today + timedelta(days=60),
+        assignment_date=today + timedelta(days=61),
+        project_start=today + timedelta(days=70),
+        project_end=today + timedelta(days=180),
+    )
+
+
+@pytest.mark.django_db
+class TestCSVImportWithTERPeriod:
+    """Tests for CSV import with ter_period_id parameter."""
+
+    def test_import_enrolls_students_in_ter_period(
+        self, staff_client, etudiant_group, ter_period
+    ):
+        """Test that imported students are enrolled in the specified TER period."""
+        csv_content = """email,first_name,last_name
+student1@test.fr,Jean,Dupont
+student2@test.fr,Marie,Martin
+"""
+        response = staff_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = staff_client.post(
+            f"/api/users/import-csv?ter_period_id={ter_period.id}",
+            data={"file": create_csv_file(csv_content)},
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["created_count"] == 2
+        assert data["enrolled_in_ter_period"] == ter_period.name
+
+        # Verify students are enrolled in the TER period
+        ter_period.refresh_from_db()
+        enrolled_emails = list(
+            ter_period.enrolled_students.values_list("email", flat=True)
+        )
+        assert "student1@test.fr" in enrolled_emails
+        assert "student2@test.fr" in enrolled_emails
+
+    def test_import_without_ter_period_does_not_enroll(
+        self, staff_client, etudiant_group, ter_period
+    ):
+        """Test that import without ter_period_id doesn't enroll students."""
+        csv_content = """email,first_name,last_name
+student@test.fr,Jean,Dupont
+"""
+        response = staff_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = staff_client.post(
+            "/api/users/import-csv",
+            data={"file": create_csv_file(csv_content)},
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["enrolled_in_ter_period"] is None
+
+        # Verify student is NOT enrolled
+        ter_period.refresh_from_db()
+        assert ter_period.enrolled_students.count() == 0
+
+    def test_import_with_invalid_ter_period_returns_404(
+        self, staff_client, etudiant_group
+    ):
+        """Test that invalid ter_period_id returns 404."""
+        csv_content = """email,first_name,last_name
+student@test.fr,Jean,Dupont
+"""
+        response = staff_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        fake_uuid = "00000000-0000-0000-0000-000000000000"
+        response = staff_client.post(
+            f"/api/users/import-csv?ter_period_id={fake_uuid}",
+            data={"file": create_csv_file(csv_content)},
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 404
+
+    def test_import_only_enrolls_created_users(
+        self, staff_client, etudiant_group, ter_period
+    ):
+        """Test that only newly created users are enrolled, not skipped ones."""
+        # Create existing user
+        existing = User.objects.create_user(
+            email="existing@test.fr",
+            password="test123",
+            first_name="Existing",
+            is_active=True,
+        )
+
+        csv_content = """email,first_name,last_name
+existing@test.fr,New,Name
+new@test.fr,New,User
+"""
+        response = staff_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = staff_client.post(
+            f"/api/users/import-csv?ter_period_id={ter_period.id}",
+            data={"file": create_csv_file(csv_content)},
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["created_count"] == 1
+        assert data["skipped_count"] == 1
+
+        # Verify only the new user is enrolled
+        ter_period.refresh_from_db()
+        enrolled_emails = list(
+            ter_period.enrolled_students.values_list("email", flat=True)
+        )
+        assert "new@test.fr" in enrolled_emails
+        assert "existing@test.fr" not in enrolled_emails

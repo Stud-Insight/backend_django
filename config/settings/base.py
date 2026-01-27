@@ -86,6 +86,7 @@ THIRD_PARTY_APPS = [
 ]
 
 LOCAL_APPS = [
+    "backend_django.core",
     "backend_django.users",
     "backend_django.projects",
     "backend_django.chat",
