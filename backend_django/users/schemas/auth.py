@@ -186,3 +186,27 @@ class ActivateWithPasswordSchema(Schema):
             msg = "Les mots de passe ne correspondent pas."
             raise ValueError(msg)
         return v
+
+
+class ProfileUpdateSchema(Schema):
+    """Schema for updating user's own profile."""
+
+    first_name: str | None = None
+    last_name: str | None = None
+
+    @field_validator("first_name")
+    @classmethod
+    def first_name_not_empty(cls, v: str | None) -> str | None:
+        if v is not None:
+            if not v.strip():
+                msg = "Le prénom ne peut pas être vide."
+                raise ValueError(msg)
+            return v.strip()
+        return v
+
+    @field_validator("last_name")
+    @classmethod
+    def last_name_strip(cls, v: str | None) -> str | None:
+        if v is not None:
+            return v.strip()
+        return v

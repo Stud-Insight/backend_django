@@ -2,6 +2,8 @@
 User schemas for API requests and responses.
 """
 
+from backend_django.users.schemas.admin import CSVImportErrorSchema
+from backend_django.users.schemas.admin import CSVImportResultSchema
 from backend_django.users.schemas.admin import RoleListSchema
 from backend_django.users.schemas.admin import RoleSchema
 from backend_django.users.schemas.admin import SetUserRoleSchema
@@ -24,6 +26,7 @@ from backend_django.users.schemas.auth import ResendActivationSchema
 from backend_django.users.schemas.auth import SignupResponseSchema
 from backend_django.users.schemas.auth import SignupSchema
 from backend_django.users.schemas.auth import UserSchema
+from backend_django.users.schemas.auth import ProfileUpdateSchema
 from backend_django.users.schemas.rgpd import RGPDDeleteRequestSchema
 from backend_django.users.schemas.rgpd import RGPDDeleteResponseSchema
 from backend_django.users.schemas.rgpd import RGPDExportResponseSchema
@@ -45,11 +48,14 @@ __all__ = [
     "PasswordChangeSchema",
     "ActivateCheckSchema",
     "ActivateWithPasswordSchema",
+    "ProfileUpdateSchema",
     # Admin schemas
     "UserCreateSchema",
     "UserUpdateSchema",
     "UserListSchema",
     "UserDetailSchema",
+    "CSVImportErrorSchema",
+    "CSVImportResultSchema",
     # Role schemas
     "RoleSchema",
     "RoleListSchema",

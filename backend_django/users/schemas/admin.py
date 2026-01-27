@@ -99,3 +99,22 @@ class UserDetailSchema(UserListSchema):
     """Detailed user schema."""
 
     pass
+
+
+class CSVImportErrorSchema(Schema):
+    """Schema for a single CSV import error."""
+
+    line: int
+    email: str | None = None
+    error: str
+
+
+class CSVImportResultSchema(Schema):
+    """Schema for CSV import result."""
+
+    success: bool
+    created_count: int
+    skipped_count: int
+    error_count: int
+    errors: list[CSVImportErrorSchema]
+    created_users: list[UserListSchema]

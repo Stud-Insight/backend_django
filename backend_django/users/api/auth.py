@@ -24,6 +24,7 @@ from django.utils.http import urlsafe_base64_encode
 from ninja_extra import api_controller
 from ninja_extra import http_get
 from ninja_extra import http_post
+from ninja_extra import http_put
 
 from backend_django.core.api import BaseAPI
 from backend_django.core.api import AllowAny
@@ -49,6 +50,7 @@ from backend_django.users.schemas import PasswordResetRequestSchema
 from backend_django.users.schemas import ResendActivationSchema
 from backend_django.users.schemas import SignupResponseSchema
 from backend_django.users.schemas import SignupSchema
+from backend_django.users.schemas import ProfileUpdateSchema
 from backend_django.users.schemas import UserSchema
 
 logger = logging.getLogger(__name__)
@@ -106,6 +108,27 @@ class AuthController(BaseAPI):
             return NotAuthenticatedError().to_response()
 
         return 200, UserSchema.from_user(request.user)
+
+    @http_put(
+        "/me",
+        response={200: UserSchema, 400: ErrorSchema, 401: ErrorSchema},
+        url_name="auth_me_update",
+    )
+    def update_me_view(self, request: HttpRequest, data: ProfileUpdateSchema):
+        """Update the current authenticated user's profile."""
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        user = request.user
+
+        if data.first_name is not None:
+            user.first_name = data.first_name
+        if data.last_name is not None:
+            user.last_name = data.last_name
+
+        user.save(update_fields=["first_name", "last_name"])
+
+        return 200, UserSchema.from_user(user)
 
     @http_post(
         "/signup",

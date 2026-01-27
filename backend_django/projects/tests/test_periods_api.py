@@ -253,3 +253,462 @@ class TestGetStagePeriodEndpoint:
 
         data = response.json()
         assert data["name"] == stage_period_open.name
+
+
+# ==================== TER Period Create Tests ====================
+
+
+@pytest.fixture
+def valid_ter_period_data():
+    """Valid data for creating a TER period."""
+    today = date.today()
+    return {
+        "name": "TER Test 2026-2027",
+        "academic_year": "2026-2027",
+        "group_formation_start": str(today + timedelta(days=10)),
+        "group_formation_end": str(today + timedelta(days=30)),
+        "subject_selection_start": str(today + timedelta(days=31)),
+        "subject_selection_end": str(today + timedelta(days=50)),
+        "assignment_date": str(today + timedelta(days=51)),
+        "project_start": str(today + timedelta(days=60)),
+        "project_end": str(today + timedelta(days=180)),
+        "min_group_size": 2,
+        "max_group_size": 4,
+    }
+
+
+@pytest.mark.django_db
+class TestCreateTERPeriodEndpoint:
+    """Tests for POST /api/ter-periods/."""
+
+    def test_staff_can_create_ter_period(self, staff_client, valid_ter_period_data):
+        """Test staff can create a TER period."""
+        response = staff_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = staff_client.post(
+            "/api/ter-periods/",
+            data=valid_ter_period_data,
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 201
+
+        data = response.json()
+        assert data["name"] == valid_ter_period_data["name"]
+        assert data["academic_year"] == valid_ter_period_data["academic_year"]
+        assert data["status"] == "draft"  # New periods start as draft
+        assert data["min_group_size"] == 2
+        assert data["max_group_size"] == 4
+
+    def test_student_cannot_create_ter_period(self, authenticated_client, valid_ter_period_data):
+        """Test student cannot create a TER period."""
+        response = authenticated_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = authenticated_client.post(
+            "/api/ter-periods/",
+            data=valid_ter_period_data,
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 403
+
+    def test_duplicate_period_rejected(self, staff_client, ter_period_open):
+        """Test duplicate period name in same year is rejected."""
+        response = staff_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        today = date.today()
+        duplicate_data = {
+            "name": ter_period_open.name,
+            "academic_year": ter_period_open.academic_year,
+            "group_formation_start": str(today + timedelta(days=10)),
+            "group_formation_end": str(today + timedelta(days=30)),
+            "subject_selection_start": str(today + timedelta(days=31)),
+            "subject_selection_end": str(today + timedelta(days=50)),
+            "assignment_date": str(today + timedelta(days=51)),
+            "project_start": str(today + timedelta(days=60)),
+            "project_end": str(today + timedelta(days=180)),
+        }
+
+        response = staff_client.post(
+            "/api/ter-periods/",
+            data=duplicate_data,
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 400
+        assert "existe déjà" in response.json()["message"]
+
+    def test_invalid_academic_year_format(self, staff_client):
+        """Test invalid academic year format is rejected."""
+        response = staff_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        today = date.today()
+        invalid_data = {
+            "name": "Test Period",
+            "academic_year": "2024",  # Invalid format
+            "group_formation_start": str(today + timedelta(days=10)),
+            "group_formation_end": str(today + timedelta(days=30)),
+            "subject_selection_start": str(today + timedelta(days=31)),
+            "subject_selection_end": str(today + timedelta(days=50)),
+            "assignment_date": str(today + timedelta(days=51)),
+            "project_start": str(today + timedelta(days=60)),
+            "project_end": str(today + timedelta(days=180)),
+        }
+
+        response = staff_client.post(
+            "/api/ter-periods/",
+            data=invalid_data,
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 422  # Validation error
+
+
+@pytest.mark.django_db
+class TestUpdateTERPeriodEndpoint:
+    """Tests for PUT /api/ter-periods/{id}."""
+
+    def test_staff_can_update_draft_period(self, staff_client, ter_period_draft):
+        """Test staff can update a draft period."""
+        response = staff_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = staff_client.put(
+            f"/api/ter-periods/{ter_period_draft.id}",
+            data={"name": "Updated Name"},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["name"] == "Updated Name"
+
+    def test_cannot_update_open_period(self, staff_client, ter_period_open):
+        """Test cannot update an open period."""
+        response = staff_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = staff_client.put(
+            f"/api/ter-periods/{ter_period_open.id}",
+            data={"name": "Should Fail"},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 400
+        assert "brouillon" in response.json()["message"]
+
+    def test_student_cannot_update_period(self, authenticated_client, ter_period_draft):
+        """Test student cannot update a period."""
+        response = authenticated_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = authenticated_client.put(
+            f"/api/ter-periods/{ter_period_draft.id}",
+            data={"name": "Should Fail"},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.django_db
+class TestTERPeriodStatusTransitions:
+    """Tests for TER period status transitions."""
+
+    def test_open_draft_period(self, staff_client, ter_period_draft):
+        """Test opening a draft period."""
+        response = staff_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = staff_client.post(
+            f"/api/ter-periods/{ter_period_draft.id}/open",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["status"] == "open"
+
+    def test_cannot_open_already_open_period(self, staff_client, ter_period_open):
+        """Test cannot open an already open period."""
+        response = staff_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = staff_client.post(
+            f"/api/ter-periods/{ter_period_open.id}/open",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 400
+
+    def test_close_open_period(self, staff_client, ter_period_open):
+        """Test closing an open period."""
+        response = staff_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = staff_client.post(
+            f"/api/ter-periods/{ter_period_open.id}/close",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["status"] == "closed"
+
+    def test_cannot_close_draft_period(self, staff_client, ter_period_draft):
+        """Test cannot close a draft period."""
+        response = staff_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = staff_client.post(
+            f"/api/ter-periods/{ter_period_draft.id}/close",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 400
+
+    def test_student_cannot_change_status(self, authenticated_client, ter_period_draft):
+        """Test student cannot change period status."""
+        response = authenticated_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = authenticated_client.post(
+            f"/api/ter-periods/{ter_period_draft.id}/open",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.django_db
+class TestCopyTERPeriodEndpoint:
+    """Tests for POST /api/ter-periods/{id}/copy."""
+
+    def test_staff_can_copy_period(self, staff_client, ter_period_open):
+        """Test staff can copy a TER period to a new academic year."""
+        response = staff_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        copy_data = {
+            "name": "TER 2025-2026",
+            "academic_year": "2025-2026",
+        }
+
+        response = staff_client.post(
+            f"/api/ter-periods/{ter_period_open.id}/copy",
+            data=copy_data,
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 201
+
+        data = response.json()
+        assert data["name"] == "TER 2025-2026"
+        assert data["academic_year"] == "2025-2026"
+        assert data["status"] == "draft"
+        assert data["min_group_size"] == ter_period_open.min_group_size
+        assert data["max_group_size"] == ter_period_open.max_group_size
+
+    def test_copy_shifts_dates_by_year_offset(self, staff_client, ter_period_open):
+        """Test that copy shifts all dates by the year difference."""
+        response = staff_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        copy_data = {
+            "name": "TER 2025-2026",
+            "academic_year": "2025-2026",
+        }
+
+        response = staff_client.post(
+            f"/api/ter-periods/{ter_period_open.id}/copy",
+            data=copy_data,
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 201
+
+        data = response.json()
+
+        # Calculate expected shifted dates (1 year = 365 days offset)
+        from datetime import datetime
+        original_start = datetime.strptime(
+            str(ter_period_open.group_formation_start), "%Y-%m-%d"
+        ).date()
+        new_start = datetime.strptime(
+            data["group_formation_start"], "%Y-%m-%d"
+        ).date()
+
+        # The offset should be approximately 365 days (1 year)
+        days_diff = (new_start - original_start).days
+        assert 364 <= days_diff <= 366  # Allow for leap year variation
+
+    def test_student_cannot_copy_period(self, authenticated_client, ter_period_open):
+        """Test student cannot copy a TER period."""
+        response = authenticated_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        copy_data = {
+            "name": "TER 2025-2026",
+            "academic_year": "2025-2026",
+        }
+
+        response = authenticated_client.post(
+            f"/api/ter-periods/{ter_period_open.id}/copy",
+            data=copy_data,
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 403
+
+    def test_cannot_copy_to_duplicate_name_and_year(self, staff_client, ter_period_open):
+        """Test cannot copy if name already exists in target year."""
+        # Create a period with the target name/year
+        TERPeriod.objects.create(
+            name="TER 2025-2026",
+            academic_year="2025-2026",
+            status=PeriodStatus.DRAFT,
+            group_formation_start=date.today() + timedelta(days=100),
+            group_formation_end=date.today() + timedelta(days=130),
+            subject_selection_start=date.today() + timedelta(days=131),
+            subject_selection_end=date.today() + timedelta(days=160),
+            assignment_date=date.today() + timedelta(days=165),
+            project_start=date.today() + timedelta(days=170),
+            project_end=date.today() + timedelta(days=280),
+        )
+
+        response = staff_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        copy_data = {
+            "name": "TER 2025-2026",
+            "academic_year": "2025-2026",
+        }
+
+        response = staff_client.post(
+            f"/api/ter-periods/{ter_period_open.id}/copy",
+            data=copy_data,
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 400
+        assert "existe déjà" in response.json()["message"]
+
+    def test_copy_nonexistent_period_returns_404(self, staff_client):
+        """Test copying a nonexistent period returns 404."""
+        import uuid
+
+        response = staff_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        copy_data = {
+            "name": "TER 2025-2026",
+            "academic_year": "2025-2026",
+        }
+
+        response = staff_client.post(
+            f"/api/ter-periods/{uuid.uuid4()}/copy",
+            data=copy_data,
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 404
+
+    def test_copy_with_invalid_academic_year_format(self, staff_client, ter_period_open):
+        """Test copy with invalid academic year format fails validation."""
+        response = staff_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        copy_data = {
+            "name": "TER 2025-2026",
+            "academic_year": "2025",  # Invalid format
+        }
+
+        response = staff_client.post(
+            f"/api/ter-periods/{ter_period_open.id}/copy",
+            data=copy_data,
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 422
+
+    def test_copy_with_empty_name_fails(self, staff_client, ter_period_open):
+        """Test copy with empty name fails validation."""
+        response = staff_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        copy_data = {
+            "name": "",
+            "academic_year": "2025-2026",
+        }
+
+        response = staff_client.post(
+            f"/api/ter-periods/{ter_period_open.id}/copy",
+            data=copy_data,
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 422
+
+    def test_copy_preserves_group_size_settings(self, staff_client, db):
+        """Test that copy preserves min/max group size from source."""
+        today = date.today()
+        source = TERPeriod.objects.create(
+            name="Custom TER",
+            academic_year="2024-2025",
+            status=PeriodStatus.OPEN,
+            group_formation_start=today,
+            group_formation_end=today + timedelta(days=30),
+            subject_selection_start=today + timedelta(days=31),
+            subject_selection_end=today + timedelta(days=60),
+            assignment_date=today + timedelta(days=61),
+            project_start=today + timedelta(days=70),
+            project_end=today + timedelta(days=180),
+            min_group_size=2,
+            max_group_size=6,
+        )
+
+        response = staff_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        copy_data = {
+            "name": "Custom TER Copy",
+            "academic_year": "2025-2026",
+        }
+
+        response = staff_client.post(
+            f"/api/ter-periods/{source.id}/copy",
+            data=copy_data,
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 201
+
+        data = response.json()
+        assert data["min_group_size"] == 2
+        assert data["max_group_size"] == 6
+
+    def test_unauthenticated_cannot_copy(self, client, ter_period_open):
+        """Test unauthenticated user cannot copy period."""
+        response = client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        copy_data = {
+            "name": "TER 2025-2026",
+            "academic_year": "2025-2026",
+        }
+
+        response = client.post(
+            f"/api/ter-periods/{ter_period_open.id}/copy",
+            data=copy_data,
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        # Controller has IsAuthenticated permission, so unauthenticated gets 403
+        assert response.status_code == 403

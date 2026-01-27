@@ -2,6 +2,8 @@
 Admin API controller for user management.
 """
 
+import csv
+import io
 import logging
 import secrets
 import string
@@ -11,6 +13,7 @@ from allauth.account.internal.flows.email_verification import send_verification_
 from allauth.account.models import EmailAddress
 from django.contrib.auth.models import Group
 from django.http import HttpRequest
+from ninja import File, UploadedFile
 from ninja_extra import api_controller
 from ninja_extra import http_delete
 from ninja_extra import http_get
@@ -27,6 +30,8 @@ from backend_django.core.exceptions import ValidationError
 from backend_django.core.roles import Role
 from backend_django.core.roles import ROLE_DESCRIPTIONS
 from backend_django.users.models import User
+from backend_django.users.schemas import CSVImportErrorSchema
+from backend_django.users.schemas import CSVImportResultSchema
 from backend_django.users.schemas import MessageSchema
 from backend_django.users.schemas import RoleListSchema
 from backend_django.users.schemas import RoleSchema
@@ -131,6 +136,181 @@ class UserAdminController(BaseAPI):
             logger.exception("Failed to send activation email for new user")
 
         return 201, UserListSchema.from_user(user)
+
+    @http_post(
+        "/import-csv",
+        response={200: CSVImportResultSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema},
+        url_name="users_import_csv",
+    )
+    def import_users_csv(self, request: HttpRequest, file: UploadedFile = File(...)):
+        """
+        Import users from a CSV file.
+
+        CSV format: email,first_name,last_name (header row required)
+        - email: Required, must be valid email format
+        - first_name: Required
+        - last_name: Optional
+
+        Users are created with:
+        - is_active=False (requires email verification)
+        - Role "Etudiant" assigned by default
+        - Activation email sent automatically
+
+        Returns a summary with created users, skipped (duplicates), and errors.
+        """
+        if not request.user.is_authenticated:
+            return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
+
+        if not request.user.is_staff:
+            return PermissionDeniedError("Permission staff requise.").to_response()
+
+        # Read and decode file
+        try:
+            content = file.read().decode("utf-8-sig")  # Handle BOM
+        except UnicodeDecodeError:
+            try:
+                file.seek(0)
+                content = file.read().decode("latin-1")
+            except Exception:
+                return 400, ErrorSchema(
+                    code="INVALID_ENCODING",
+                    message="Encodage du fichier invalide. Utilisez UTF-8 ou Latin-1.",
+                )
+
+        # Parse CSV
+        errors: list[CSVImportErrorSchema] = []
+        created_users: list[User] = []
+        skipped_count = 0
+
+        try:
+            reader = csv.DictReader(io.StringIO(content), delimiter=",")
+
+            # Validate header
+            if not reader.fieldnames:
+                return 400, ErrorSchema(
+                    code="INVALID_CSV",
+                    message="Fichier CSV vide ou invalide.",
+                )
+
+            # Normalize field names (lowercase, strip)
+            fieldnames = [f.lower().strip() for f in reader.fieldnames]
+
+            if "email" not in fieldnames:
+                return 400, ErrorSchema(
+                    code="MISSING_COLUMN",
+                    message="Colonne 'email' manquante dans le CSV.",
+                )
+
+            if "first_name" not in fieldnames and "prenom" not in fieldnames and "prénom" not in fieldnames:
+                return 400, ErrorSchema(
+                    code="MISSING_COLUMN",
+                    message="Colonne 'first_name' ou 'prenom' manquante dans le CSV.",
+                )
+
+        except csv.Error as e:
+            return 400, ErrorSchema(
+                code="INVALID_CSV",
+                message=f"Erreur de parsing CSV: {e!s}",
+            )
+
+        # Re-read with normalized fieldnames
+        reader = csv.DictReader(io.StringIO(content), delimiter=",")
+
+        # Get Etudiant group for default assignment
+        etudiant_group = None
+        try:
+            etudiant_group = Group.objects.get(name=Role.ETUDIANT.value)
+        except Group.DoesNotExist:
+            logger.warning("Etudiant group not found, users will be created without role")
+
+        for line_num, row in enumerate(reader, start=2):  # Start at 2 (header is line 1)
+            # Normalize row keys
+            row = {k.lower().strip(): v.strip() if v else "" for k, v in row.items()}
+
+            # Extract fields with fallbacks for French column names
+            email = row.get("email", "").lower()
+            first_name = row.get("first_name") or row.get("prenom") or row.get("prénom", "")
+            last_name = row.get("last_name") or row.get("nom", "")
+
+            # Validate email
+            if not email:
+                errors.append(CSVImportErrorSchema(
+                    line=line_num,
+                    email=None,
+                    error="Email manquant.",
+                ))
+                continue
+
+            if "@" not in email or "." not in email:
+                errors.append(CSVImportErrorSchema(
+                    line=line_num,
+                    email=email,
+                    error="Format d'email invalide.",
+                ))
+                continue
+
+            # Validate first_name
+            if not first_name:
+                errors.append(CSVImportErrorSchema(
+                    line=line_num,
+                    email=email,
+                    error="Prénom manquant.",
+                ))
+                continue
+
+            # Check if user already exists
+            if User.objects.filter(email__iexact=email).exists():
+                skipped_count += 1
+                continue
+
+            # Create user
+            try:
+                temp_password = generate_temp_password()
+
+                user = User.objects.create_user(
+                    email=email,
+                    password=temp_password,
+                    first_name=first_name,
+                    last_name=last_name,
+                    is_active=False,
+                )
+
+                # Assign Etudiant role
+                if etudiant_group:
+                    user.groups.add(etudiant_group)
+
+                # Create EmailAddress for allauth
+                EmailAddress.objects.create(
+                    user=user,
+                    email=user.email,
+                    primary=True,
+                    verified=False,
+                )
+
+                # Send activation email
+                try:
+                    send_verification_email_for_user(request, user)
+                except Exception:
+                    logger.exception(f"Failed to send activation email for {email}")
+
+                created_users.append(user)
+
+            except Exception as e:
+                logger.exception(f"Failed to create user {email}")
+                errors.append(CSVImportErrorSchema(
+                    line=line_num,
+                    email=email,
+                    error=f"Erreur de création: {e!s}",
+                ))
+
+        return 200, CSVImportResultSchema(
+            success=len(errors) == 0,
+            created_count=len(created_users),
+            skipped_count=skipped_count,
+            error_count=len(errors),
+            errors=errors,
+            created_users=[UserListSchema.from_user(u) for u in created_users],
+        )
 
     @http_get(
         "/{user_id}",
