@@ -17,18 +17,18 @@ class UserMinimalSchema(Schema):
     """Minimal user information for references."""
 
     id: UUID
+    email: str
     first_name: str
     last_name: str
-    email: str
 
-    @staticmethod
-    def from_user(user) -> "UserMinimalSchema":
+    @classmethod
+    def from_user(cls, user) -> "UserMinimalSchema":
         """Create schema from User model."""
-        return UserMinimalSchema(
+        return cls(
             id=user.id,
-            first_name=user.first_name,
-            last_name=user.last_name,
             email=user.email,
+            first_name=user.first_name or "",
+            last_name=user.last_name or "",
         )
 
 

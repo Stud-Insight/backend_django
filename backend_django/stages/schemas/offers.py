@@ -7,14 +7,10 @@ from uuid import UUID
 from ninja import Schema
 from pydantic import field_validator
 
+from backend_django.projects.schemas.projects import UserMinimalSchema
 
-class UserMinimalSchema(Schema):
-    """Minimal user information for display."""
-
-    id: UUID
-    email: str
-    first_name: str
-    last_name: str
+# Re-export for convenience
+__all__ = ["UserMinimalSchema"]
 
 
 class StageOfferListSchema(Schema):

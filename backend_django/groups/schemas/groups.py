@@ -8,48 +8,12 @@ from uuid import UUID
 from ninja import Schema
 from pydantic import field_validator
 
+from backend_django.projects.schemas.projects import UserMinimalSchema
+from backend_django.stages.schemas.periods import StagePeriodSchema
+from backend_django.ter.schemas.periods import TERPeriodSchema
 
-class UserMinimalSchema(Schema):
-    """Minimal user information for display."""
-
-    id: UUID
-    email: str
-    first_name: str
-    last_name: str
-
-    @classmethod
-    def from_user(cls, user) -> "UserMinimalSchema":
-        """Create from User model instance."""
-        return cls(
-            id=user.id,
-            email=user.email,
-            first_name=user.first_name or "",
-            last_name=user.last_name or "",
-        )
-
-
-class TERPeriodSchema(Schema):
-    """Schema for TER period in group responses."""
-
-    id: UUID
-    name: str
-    academic_year: str
-    status: str
-    group_formation_start: str
-    group_formation_end: str
-    min_group_size: int
-    max_group_size: int
-
-
-class StagePeriodSchema(Schema):
-    """Schema for Stage period in group responses."""
-
-    id: UUID
-    name: str
-    academic_year: str
-    status: str
-    application_start: str
-    application_end: str
+# Re-export for convenience
+__all__ = ["TERPeriodSchema", "StagePeriodSchema", "UserMinimalSchema"]
 
 
 class GroupListSchema(Schema):

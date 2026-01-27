@@ -9,30 +9,11 @@ from ninja import Schema
 from pydantic import field_validator
 
 from backend_django.projects.schemas.projects import UserMinimalSchema
+from backend_django.stages.schemas.periods import StagePeriodSchema
+from backend_django.ter.schemas.periods import TERPeriodSchema
 
-
-class TERPeriodSchema(Schema):
-    """Schema for TER period in group responses."""
-
-    id: UUID
-    name: str
-    academic_year: str
-    status: str
-    group_formation_start: str
-    group_formation_end: str
-    min_group_size: int
-    max_group_size: int
-
-
-class StagePeriodSchema(Schema):
-    """Schema for Stage period in group responses."""
-
-    id: UUID
-    name: str
-    academic_year: str
-    status: str
-    application_start: str
-    application_end: str
+# Re-export for backward compatibility
+__all__ = ["TERPeriodSchema", "StagePeriodSchema"]
 
 
 class GroupListSchema(Schema):
