@@ -18,6 +18,7 @@ class UserCreateSchema(Schema):
     email: str
     first_name: str
     last_name: str = ""
+    company_name: str = ""  # For Externe users
     groups: list[str] = []  # Group names (roles)
 
 
@@ -27,6 +28,7 @@ class UserUpdateSchema(Schema):
     first_name: str | None = None
     last_name: str | None = None
     is_active: bool | None = None
+    company_name: str | None = None  # For Externe users
     groups: list[str] | None = None  # Group names (roles)
 
 
@@ -63,6 +65,7 @@ class UserListSchema(Schema):
     email: str
     first_name: str
     last_name: str
+    company_name: str
     is_active: bool
     is_staff: bool
     is_superuser: bool
@@ -86,6 +89,7 @@ class UserListSchema(Schema):
             email=user.email,
             first_name=user.first_name,
             last_name=user.last_name,
+            company_name=user.company_name,
             is_active=user.is_active,
             is_staff=user.is_staff,
             is_superuser=user.is_superuser,

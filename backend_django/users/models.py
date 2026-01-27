@@ -41,6 +41,13 @@ class User(AbstractUser):
         null=True,
     )
 
+    # External supervisor (Externe) specific fields
+    company_name = CharField(
+        _("company name"),
+        max_length=255,
+        blank=True,
+    )
+
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["first_name"]
 

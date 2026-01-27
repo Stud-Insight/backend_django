@@ -112,6 +112,7 @@ class UserAdminController(BaseAPI):
             password=temp_password,
             first_name=data.first_name,
             last_name=data.last_name,
+            company_name=data.company_name,
             is_active=False,
         )
 
@@ -354,6 +355,8 @@ class UserAdminController(BaseAPI):
             user.first_name = data.first_name
         if data.last_name is not None:
             user.last_name = data.last_name
+        if data.company_name is not None:
+            user.company_name = data.company_name
         if data.is_active is not None:
             user.is_active = data.is_active
 
