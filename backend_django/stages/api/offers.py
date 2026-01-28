@@ -17,6 +17,7 @@ from backend_django.core.exceptions import (
     NotFoundError,
     PermissionDeniedError,
 )
+from backend_django.core.roles import is_stage_admin
 from backend_django.stages.models import OfferStatus, PeriodStatus, StageFavorite, StageOffer, StagePeriod
 from backend_django.stages.schemas.offers import (
     StageFavoriteSchema,
@@ -117,7 +118,7 @@ class StageOfferController(BaseAPI):
         offers = StageOffer.objects.select_related("supervisor", "stage_period").all()
 
         # Non-staff users only see validated offers (and their own drafts/submitted)
-        if not request.user.is_staff:
+        if not is_stage_admin(request.user):
             offers = offers.filter(
                 models.Q(status=OfferStatus.VALIDATED) |
                 models.Q(supervisor=request.user)
@@ -154,7 +155,7 @@ class StageOfferController(BaseAPI):
         )
 
         # Non-staff/non-owners can only see validated offers
-        if not request.user.is_staff and not offer.can_be_managed_by(request.user):
+        if not is_stage_admin(request.user) and not offer.can_be_managed_by(request.user):
             if offer.status != OfferStatus.VALIDATED:
                 return NotFoundError("Offre de stage non trouvee.").to_response()
 
@@ -183,7 +184,7 @@ class StageOfferController(BaseAPI):
 
         # Check Stage period exists and is open
         stage_period = get_object_or_404(StagePeriod, id=data.stage_period_id)
-        if stage_period.status != PeriodStatus.OPEN and not request.user.is_staff:
+        if stage_period.status != PeriodStatus.OPEN and not is_stage_admin(request.user):
             return BadRequestError(
                 "La periode de stage n'est pas ouverte."
             ).to_response()
@@ -302,7 +303,7 @@ class StageOfferController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not request.user.is_staff:
+        if not is_stage_admin(request.user):
             return PermissionDeniedError(
                 "Seuls les responsables Stage peuvent valider des offres."
             ).to_response()
@@ -334,7 +335,7 @@ class StageOfferController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not request.user.is_staff:
+        if not is_stage_admin(request.user):
             return PermissionDeniedError(
                 "Seuls les responsables Stage peuvent rejeter des offres."
             ).to_response()

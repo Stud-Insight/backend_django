@@ -27,6 +27,7 @@ from backend_django.core.exceptions import ErrorSchema
 from backend_django.core.exceptions import NotFoundError
 from backend_django.core.exceptions import PermissionDeniedError
 from backend_django.core.exceptions import ValidationError
+from backend_django.core.roles import is_admin_or_respo
 from backend_django.core.roles import Role
 from backend_django.core.roles import ROLE_DESCRIPTIONS
 from backend_django.ter.models import TERPeriod
@@ -65,8 +66,8 @@ class UserAdminController(BaseAPI):
         if not request.user.is_authenticated:
             return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
 
-        if not request.user.is_staff:
-            return PermissionDeniedError("Permission staff requise.").to_response()
+        if not is_admin_or_respo(request.user):
+            return PermissionDeniedError("Permission administrateur ou responsable requise.").to_response()
 
         users = User.objects.prefetch_related("groups__permissions").all()
         return 200, [UserListSchema.from_user(user) for user in users]
@@ -81,8 +82,8 @@ class UserAdminController(BaseAPI):
         if not request.user.is_authenticated:
             return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
 
-        if not request.user.is_staff:
-            return PermissionDeniedError("Permission staff requise.").to_response()
+        if not is_admin_or_respo(request.user):
+            return PermissionDeniedError("Permission administrateur ou responsable requise.").to_response()
 
         roles = [
             RoleSchema(name=role.value, description=ROLE_DESCRIPTIONS[role])
@@ -100,8 +101,8 @@ class UserAdminController(BaseAPI):
         if not request.user.is_authenticated:
             return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
 
-        if not request.user.is_staff:
-            return PermissionDeniedError("Permission staff requise.").to_response()
+        if not is_admin_or_respo(request.user):
+            return PermissionDeniedError("Permission administrateur ou responsable requise.").to_response()
 
         if User.objects.filter(email__iexact=data.email).exists():
             return AlreadyExistsError("Un compte avec cet email existe déjà.").to_response()
@@ -172,8 +173,8 @@ class UserAdminController(BaseAPI):
         if not request.user.is_authenticated:
             return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
 
-        if not request.user.is_staff:
-            return PermissionDeniedError("Permission staff requise.").to_response()
+        if not is_admin_or_respo(request.user):
+            return PermissionDeniedError("Permission administrateur ou responsable requise.").to_response()
 
         # Validate TER period if provided
         ter_period = None
@@ -349,8 +350,8 @@ class UserAdminController(BaseAPI):
         if not request.user.is_authenticated:
             return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
 
-        if not request.user.is_staff:
-            return PermissionDeniedError("Permission staff requise.").to_response()
+        if not is_admin_or_respo(request.user):
+            return PermissionDeniedError("Permission administrateur ou responsable requise.").to_response()
 
         try:
             user = User.objects.prefetch_related("groups__permissions").get(id=user_id)
@@ -369,8 +370,8 @@ class UserAdminController(BaseAPI):
         if not request.user.is_authenticated:
             return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
 
-        if not request.user.is_staff:
-            return PermissionDeniedError("Permission staff requise.").to_response()
+        if not is_admin_or_respo(request.user):
+            return PermissionDeniedError("Permission administrateur ou responsable requise.").to_response()
 
         try:
             user = User.objects.get(id=user_id)
@@ -409,8 +410,8 @@ class UserAdminController(BaseAPI):
         if not request.user.is_authenticated:
             return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
 
-        if not request.user.is_staff:
-            return PermissionDeniedError("Permission staff requise.").to_response()
+        if not is_admin_or_respo(request.user):
+            return PermissionDeniedError("Permission administrateur ou responsable requise.").to_response()
 
         try:
             user = User.objects.get(id=user_id)
@@ -442,8 +443,8 @@ class UserAdminController(BaseAPI):
         if not request.user.is_authenticated:
             return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
 
-        if not request.user.is_staff:
-            return PermissionDeniedError("Permission staff requise.").to_response()
+        if not is_admin_or_respo(request.user):
+            return PermissionDeniedError("Permission administrateur ou responsable requise.").to_response()
 
         try:
             user = User.objects.get(id=user_id)
@@ -480,8 +481,8 @@ class UserAdminController(BaseAPI):
         if not request.user.is_authenticated:
             return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
 
-        if not request.user.is_staff:
-            return PermissionDeniedError("Permission staff requise.").to_response()
+        if not is_admin_or_respo(request.user):
+            return PermissionDeniedError("Permission administrateur ou responsable requise.").to_response()
 
         try:
             user = User.objects.get(id=user_id)
@@ -531,8 +532,8 @@ class UserAdminController(BaseAPI):
         if not request.user.is_authenticated:
             return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
 
-        if not request.user.is_staff:
-            return PermissionDeniedError("Permission staff requise.").to_response()
+        if not is_admin_or_respo(request.user):
+            return PermissionDeniedError("Permission administrateur ou responsable requise.").to_response()
 
         try:
             user = User.objects.get(id=user_id)
@@ -578,8 +579,8 @@ class UserAdminController(BaseAPI):
         if not request.user.is_authenticated:
             return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
 
-        if not request.user.is_staff:
-            return PermissionDeniedError("Permission staff requise.").to_response()
+        if not is_admin_or_respo(request.user):
+            return PermissionDeniedError("Permission administrateur ou responsable requise.").to_response()
 
         try:
             user = User.objects.get(id=user_id)

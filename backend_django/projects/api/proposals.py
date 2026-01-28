@@ -21,6 +21,7 @@ from backend_django.core.exceptions import BadRequestError
 from backend_django.core.exceptions import ErrorSchema
 from backend_django.core.exceptions import NotAuthenticatedError
 from backend_django.core.exceptions import PermissionDeniedError
+from backend_django.core.roles import is_admin_or_respo
 from backend_django.projects.models import AcademicProject
 from backend_django.projects.models import AcademicProjectStatus
 from backend_django.projects.models import ApplicationStatus
@@ -226,7 +227,7 @@ class ProposalController(BaseAPI):
 
         # Determine proposal type based on user role
         if data.is_professor_proposal:
-            if not request.user.is_staff:
+            if not is_admin_or_respo(request.user):
                 return PermissionDeniedError("Seul le staff peut créer une proposition de professeur.").to_response()
             initial_status = ProposalStatus.OPEN
         else:

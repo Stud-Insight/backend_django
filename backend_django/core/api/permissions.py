@@ -31,17 +31,22 @@ class IsAuthenticated(permissions.BasePermission):
 
 class IsStaff(permissions.BasePermission):
     """
-    Permission class that requires staff status.
+    Permission class that requires admin or respo privileges.
 
-    Checks if the user is authenticated and has staff privileges.
+    Uses role-based checks (Admin, Respo TER, Respo Stage) instead of is_staff.
+    Kept for backwards compatibility with existing controllers.
     """
 
     message = "Accès réservé au personnel."
 
     def has_permission(self, request: HttpRequest, controller: Any) -> bool:
-        """Check if the user is staff."""
-        return bool(
-            request.user and request.user.is_authenticated and request.user.is_staff
+        """Check if the user has admin/respo role."""
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.is_superuser:
+            return True
+        return user_has_any_role(
+            request.user, [Role.ADMIN, Role.RESPO_TER, Role.RESPO_STAGE]
         )
 
 
@@ -168,19 +173,43 @@ class IsAcademic(permissions.BasePermission):
         )
 
 
-class IsStaffOrRespo(permissions.BasePermission):
+class IsAdminOrRespo(permissions.BasePermission):
     """
-    Permission for staff or responsables.
+    Permission for Admin or Responsables.
 
     Useful for admin-like endpoints that Respo should also access.
+    Checks for Admin role (or superuser) OR Respo TER/Stage roles.
+    """
+
+    message = "Accès réservé aux administrateurs ou responsables."
+
+    def has_permission(self, request: HttpRequest, controller: Any) -> bool:
+        """Check if user has Admin or Respo role."""
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.is_superuser:
+            return True
+        return user_has_any_role(
+            request.user, [Role.ADMIN, Role.RESPO_TER, Role.RESPO_STAGE]
+        )
+
+
+class IsStaffOrRespo(permissions.BasePermission):
+    """
+    DEPRECATED: Use IsAdminOrRespo instead.
+
+    Permission for staff or responsables.
+    Kept for backwards compatibility.
     """
 
     message = "Accès réservé au personnel ou responsables."
 
     def has_permission(self, request: HttpRequest, controller: Any) -> bool:
-        """Check if user is staff or has a Respo role."""
+        """Check if user is admin/superuser or has a Respo role."""
         if not request.user or not request.user.is_authenticated:
             return False
-        if request.user.is_staff:
+        if request.user.is_superuser:
             return True
-        return user_has_any_role(request.user, [Role.RESPO_TER, Role.RESPO_STAGE])
+        return user_has_any_role(
+            request.user, [Role.ADMIN, Role.RESPO_TER, Role.RESPO_STAGE]
+        )

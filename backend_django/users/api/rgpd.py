@@ -18,6 +18,7 @@ from backend_django.core.exceptions import ErrorSchema
 from backend_django.core.exceptions import NotFoundError
 from backend_django.core.exceptions import PermissionDeniedError
 from backend_django.core.exceptions import ValidationError
+from backend_django.core.roles import is_admin
 from backend_django.users.models import User
 from backend_django.users.rgpd import anonymize_user
 from backend_django.users.rgpd import can_delete_user
@@ -136,7 +137,7 @@ class RGPDAdminController(BaseAPI):
         if not request.user.is_authenticated:
             return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
 
-        if not request.user.is_staff:
+        if not is_admin(request.user):
             return PermissionDeniedError("Permission staff requise.").to_response()
 
         try:
@@ -178,7 +179,7 @@ class RGPDAdminController(BaseAPI):
         if not request.user.is_authenticated:
             return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
 
-        if not request.user.is_staff:
+        if not is_admin(request.user):
             return PermissionDeniedError("Permission staff requise.").to_response()
 
         try:

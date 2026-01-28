@@ -24,6 +24,7 @@ from backend_django.core.exceptions import NotAuthenticatedError
 from backend_django.core.exceptions import NotFoundError
 from backend_django.core.exceptions import NotOwnerError
 from backend_django.core.exceptions import PermissionDeniedError
+from backend_django.core.roles import is_admin_or_respo
 from backend_django.projects.models import AcademicProject
 from backend_django.projects.models import AcademicProjectStatus
 from backend_django.projects.models import Attachment
@@ -118,7 +119,7 @@ class AcademicProjectController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if request.user.is_staff:
+        if is_admin_or_respo(request.user):
             projects = AcademicProject.objects.all()
         else:
             projects = AcademicProject.objects.filter(
@@ -168,7 +169,7 @@ class AcademicProjectController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if request.user.is_staff:
+        if is_admin_or_respo(request.user):
             projects = AcademicProject.objects.filter(status=AcademicProjectStatus.IN_PROGRESS)
         else:
             projects = AcademicProject.objects.filter(
@@ -193,7 +194,7 @@ class AcademicProjectController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not request.user.is_staff:
+        if not is_admin_or_respo(request.user):
             return PermissionDeniedError("Permission staff requise.").to_response()
 
         projects = AcademicProject.objects.filter(
@@ -218,7 +219,7 @@ class AcademicProjectController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if request.user.is_staff:
+        if is_admin_or_respo(request.user):
             projects = AcademicProject.objects.filter(status=AcademicProjectStatus.ARCHIVED)
         else:
             projects = AcademicProject.objects.filter(
@@ -268,7 +269,7 @@ class AcademicProjectController(BaseAPI):
 
         # Determine the student
         if data.student_id:
-            if not request.user.is_staff:
+            if not is_admin_or_respo(request.user):
                 return PermissionDeniedError("Seul le staff peut créer un projet pour un autre utilisateur.").to_response()
             student = User.objects.filter(id=data.student_id).first()
             if not student:
@@ -319,7 +320,7 @@ class AcademicProjectController(BaseAPI):
 
         # Check permissions
         is_owner = project.student_id == request.user.id
-        if not request.user.is_staff:
+        if not is_admin_or_respo(request.user):
             if not is_owner:
                 return PermissionDeniedError("Vous n'êtes pas le propriétaire de ce projet.").to_response()
             if project.status != AcademicProjectStatus.PENDING:
@@ -371,7 +372,7 @@ class AcademicProjectController(BaseAPI):
         project = get_object_or_404(AcademicProject, id=project_id)
 
         is_owner = project.student_id == request.user.id
-        if not request.user.is_staff:
+        if not is_admin_or_respo(request.user):
             if not is_owner:
                 return PermissionDeniedError("Vous n'êtes pas le propriétaire de ce projet.").to_response()
             if project.status != AcademicProjectStatus.PENDING:
@@ -406,19 +407,19 @@ class AcademicProjectController(BaseAPI):
         is_student = project.student_id == request.user.id
 
         if new_status == AcademicProjectStatus.VALIDATED:
-            if not (is_supervisor or request.user.is_staff):
+            if not (is_supervisor or is_admin_or_respo(request.user)):
                 return PermissionDeniedError("Seul l'encadrant ou le staff peut valider.").to_response()
         elif new_status == AcademicProjectStatus.IN_PROGRESS:
-            if not request.user.is_staff:
+            if not is_admin_or_respo(request.user):
                 return PermissionDeniedError("Seul le staff peut passer un projet en cours.").to_response()
         elif new_status == AcademicProjectStatus.COMPLETED:
-            if not (is_student or is_supervisor or request.user.is_staff):
+            if not (is_student or is_supervisor or is_admin_or_respo(request.user)):
                 return PermissionDeniedError("Seul l'étudiant, l'encadrant ou le staff peut terminer.").to_response()
         elif new_status == AcademicProjectStatus.ARCHIVED:
-            if not request.user.is_staff:
+            if not is_admin_or_respo(request.user):
                 return PermissionDeniedError("Seul le staff peut archiver.").to_response()
         elif new_status == AcademicProjectStatus.REJECTED:
-            if not (is_supervisor or request.user.is_staff):
+            if not (is_supervisor or is_admin_or_respo(request.user)):
                 return PermissionDeniedError("Seul l'encadrant ou le staff peut refuser.").to_response()
             if not data.reason:
                 return BadRequestError("Une raison est requise pour le refus.").to_response()
@@ -442,7 +443,7 @@ class AcademicProjectController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not request.user.is_staff:
+        if not is_admin_or_respo(request.user):
             return PermissionDeniedError("Permission staff requise.").to_response()
 
         project = get_object_or_404(AcademicProject, id=project_id)
@@ -503,7 +504,7 @@ class AcademicProjectController(BaseAPI):
 
         # Check permissions
         is_owner = attachment.owner_id == request.user.id
-        if not (is_owner or request.user.is_staff):
+        if not (is_owner or is_admin_or_respo(request.user)):
             return NotOwnerError("Vous n'êtes pas le propriétaire de ce fichier.").to_response()
 
         # Remove from project and delete file

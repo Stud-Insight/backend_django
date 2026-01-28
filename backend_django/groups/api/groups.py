@@ -20,6 +20,7 @@ from backend_django.core.exceptions import (
     NotFoundError,
     PermissionDeniedError,
 )
+from backend_django.core.roles import is_ter_admin
 from backend_django.groups.models import Group, GroupInvitation, GroupStatus, InvitationStatus
 from backend_django.groups.schemas.groups import (
     DashboardStatsSchema,
@@ -656,7 +657,7 @@ class GroupController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not request.user.is_staff:
+        if not is_ter_admin(request.user):
             return PermissionDeniedError("Reserve au personnel.").to_response()
 
         ter_period = get_object_or_404(TERPeriod, id=ter_period_id)
@@ -710,7 +711,7 @@ class GroupController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not request.user.is_staff:
+        if not is_ter_admin(request.user):
             return PermissionDeniedError("Reserve au personnel.").to_response()
 
         ter_period = get_object_or_404(TERPeriod, id=ter_period_id)
@@ -761,7 +762,7 @@ class GroupController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not request.user.is_staff:
+        if not is_ter_admin(request.user):
             return PermissionDeniedError("Reserve au personnel.").to_response()
 
         ter_period = get_object_or_404(TERPeriod, id=ter_period_id)

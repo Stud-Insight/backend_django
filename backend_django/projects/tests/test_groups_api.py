@@ -6,8 +6,10 @@ from datetime import date
 from datetime import timedelta
 
 import pytest
+from django.contrib.auth.models import Group
 from django.test import Client
 
+from backend_django.core.roles import Role
 from backend_django.groups.models import Group as StudentGroup
 from backend_django.groups.models import GroupStatus
 from backend_django.projects.models import AcademicProjectType
@@ -1490,16 +1492,18 @@ class TestDeadlineValidation:
 
 @pytest.fixture
 def staff_user(db):
-    """Create a staff user for dashboard access."""
+    """Create a staff user (Respo TER) for dashboard access."""
     user = UserFactory(
         email="staff@test.com",
         first_name="Staff",
         last_name="User",
         is_active=True,
-        is_staff=True,
     )
     user.set_password("testpass123")
     user.save()
+    # Add Respo TER role for TER dashboard access
+    respo_ter_group, _ = Group.objects.get_or_create(name=Role.RESPO_TER.value)
+    user.groups.add(respo_ter_group)
     return user
 
 

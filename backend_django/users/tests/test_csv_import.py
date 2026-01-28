@@ -14,15 +14,17 @@ from backend_django.users.models import User
 
 @pytest.fixture
 def staff_user(db):
-    """Create a staff user."""
+    """Create a staff user (Admin) for admin access."""
     user = User.objects.create_user(
         email="staff@test.fr",
         password="testpass123",
         first_name="Staff",
         last_name="User",
         is_active=True,
-        is_staff=True,
     )
+    # Add Admin role for admin access
+    admin_group, _ = Group.objects.get_or_create(name=Role.ADMIN.value)
+    user.groups.add(admin_group)
     return user
 
 

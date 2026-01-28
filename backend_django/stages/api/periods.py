@@ -17,6 +17,7 @@ from backend_django.core.exceptions import (
     NotFoundError,
     PermissionDeniedError,
 )
+from backend_django.core.roles import is_stage_admin
 from backend_django.stages.models import PeriodStatus, StagePeriod
 from backend_django.stages.schemas.periods import (
     StagePeriodCreateSchema,
@@ -90,7 +91,7 @@ class StagePeriodController(BaseAPI):
         periods = StagePeriod.objects.all()
 
         # Non-staff users only see open periods
-        if not request.user.is_staff:
+        if not is_stage_admin(request.user):
             periods = periods.filter(status=PeriodStatus.OPEN)
         elif status:
             periods = periods.filter(status=status)
@@ -114,8 +115,8 @@ class StagePeriodController(BaseAPI):
 
         period = get_object_or_404(StagePeriod, id=period_id)
 
-        # Non-staff users can only see open periods
-        if not request.user.is_staff and period.status != PeriodStatus.OPEN:
+        # Non-admin users can only see open periods
+        if not is_stage_admin(request.user) and period.status != PeriodStatus.OPEN:
             return NotFoundError("Periode Stage non trouvee.").to_response()
 
         return 200, stage_period_to_detail_schema(period)
@@ -134,7 +135,7 @@ class StagePeriodController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not request.user.is_staff:
+        if not is_stage_admin(request.user):
             return PermissionDeniedError(
                 "Seuls les responsables Stage peuvent creer des periodes."
             ).to_response()
@@ -179,7 +180,7 @@ class StagePeriodController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not request.user.is_staff:
+        if not is_stage_admin(request.user):
             return PermissionDeniedError(
                 "Seuls les responsables Stage peuvent modifier des periodes."
             ).to_response()
@@ -224,7 +225,7 @@ class StagePeriodController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not request.user.is_staff:
+        if not is_stage_admin(request.user):
             return PermissionDeniedError(
                 "Seuls les responsables Stage peuvent ouvrir des periodes."
             ).to_response()
@@ -255,7 +256,7 @@ class StagePeriodController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not request.user.is_staff:
+        if not is_stage_admin(request.user):
             return PermissionDeniedError(
                 "Seuls les responsables Stage peuvent cloturer des periodes."
             ).to_response()

@@ -17,6 +17,7 @@ from backend_django.core.exceptions import (
     NotFoundError,
     PermissionDeniedError,
 )
+from backend_django.core.roles import is_ter_admin
 from backend_django.groups.models import Group, GroupStatus
 from backend_django.ter.models import SubjectStatus, TERRanking, TERSubject
 from backend_django.ter.schemas.rankings import (
@@ -50,7 +51,7 @@ class TERRankingController(BaseAPI):
         group = get_object_or_404(Group, id=group_id)
 
         # Check permissions
-        if not group.is_member(request.user) and not request.user.is_staff:
+        if not group.is_member(request.user) and not is_ter_admin(request.user):
             return PermissionDeniedError(
                 "Vous n'etes pas membre de ce groupe."
             ).to_response()

@@ -65,7 +65,7 @@ class TestIsAuthenticated:
 
 @pytest.mark.django_db
 class TestIsStaff:
-    """Tests for IsStaff permission."""
+    """Tests for IsStaff permission (now uses role-based checks)."""
 
     def test_anonymous_user_denied(self, request_factory):
         """Test anonymous user is denied."""
@@ -73,16 +73,41 @@ class TestIsStaff:
         perm = IsStaff()
         assert perm.has_permission(request, None) is False
 
-    def test_non_staff_user_denied(self, request_factory):
-        """Test non-staff user is denied."""
-        user = UserFactory(is_staff=False)
+    def test_regular_user_denied(self, request_factory, role_groups):
+        """Test regular user without admin/respo role is denied."""
+        user = UserFactory()
+        user.groups.add(role_groups[Role.ETUDIANT])
         request = make_request(request_factory, user)
         perm = IsStaff()
         assert perm.has_permission(request, None) is False
 
-    def test_staff_user_allowed(self, request_factory):
-        """Test staff user is allowed."""
-        user = UserFactory(is_staff=True)
+    def test_admin_role_allowed(self, request_factory, role_groups):
+        """Test user with Admin role is allowed."""
+        user = UserFactory()
+        user.groups.add(role_groups[Role.ADMIN])
+        request = make_request(request_factory, user)
+        perm = IsStaff()
+        assert perm.has_permission(request, None) is True
+
+    def test_respo_ter_allowed(self, request_factory, role_groups):
+        """Test user with Respo TER role is allowed."""
+        user = UserFactory()
+        user.groups.add(role_groups[Role.RESPO_TER])
+        request = make_request(request_factory, user)
+        perm = IsStaff()
+        assert perm.has_permission(request, None) is True
+
+    def test_respo_stage_allowed(self, request_factory, role_groups):
+        """Test user with Respo Stage role is allowed."""
+        user = UserFactory()
+        user.groups.add(role_groups[Role.RESPO_STAGE])
+        request = make_request(request_factory, user)
+        perm = IsStaff()
+        assert perm.has_permission(request, None) is True
+
+    def test_superuser_allowed(self, request_factory):
+        """Test superuser is allowed."""
+        user = UserFactory(is_superuser=True)
         request = make_request(request_factory, user)
         perm = IsStaff()
         assert perm.has_permission(request, None) is True
@@ -286,26 +311,43 @@ class TestIsAcademic:
 
 @pytest.mark.django_db
 class TestIsStaffOrRespo:
-    """Tests for IsStaffOrRespo (composite) permission."""
+    """Tests for IsStaffOrRespo (composite) permission - now uses role-based checks."""
 
-    def test_staff_allowed(self, request_factory, role_groups):
-        """Test staff user is allowed."""
-        user = UserFactory(is_staff=True)
+    def test_admin_role_allowed(self, request_factory, role_groups):
+        """Test user with Admin role is allowed."""
+        user = UserFactory()
+        user.groups.add(role_groups[Role.ADMIN])
+        request = make_request(request_factory, user)
+        perm = IsStaffOrRespo()
+        assert perm.has_permission(request, None) is True
+
+    def test_superuser_allowed(self, request_factory, role_groups):
+        """Test superuser is allowed."""
+        user = UserFactory(is_superuser=True)
         request = make_request(request_factory, user)
         perm = IsStaffOrRespo()
         assert perm.has_permission(request, None) is True
 
     def test_respo_ter_allowed(self, request_factory, role_groups):
         """Test Respo TER is allowed."""
-        user = UserFactory(is_staff=False)
+        user = UserFactory()
         user.groups.add(role_groups[Role.RESPO_TER])
         request = make_request(request_factory, user)
         perm = IsStaffOrRespo()
         assert perm.has_permission(request, None) is True
 
+    def test_respo_stage_allowed(self, request_factory, role_groups):
+        """Test Respo Stage is allowed."""
+        user = UserFactory()
+        user.groups.add(role_groups[Role.RESPO_STAGE])
+        request = make_request(request_factory, user)
+        perm = IsStaffOrRespo()
+        assert perm.has_permission(request, None) is True
+
     def test_regular_user_denied(self, request_factory, role_groups):
-        """Test regular user is denied."""
-        user = UserFactory(is_staff=False)
+        """Test regular user without admin/respo roles is denied."""
+        user = UserFactory()
+        user.groups.add(role_groups[Role.ETUDIANT])
         request = make_request(request_factory, user)
         perm = IsStaffOrRespo()
         assert perm.has_permission(request, None) is False

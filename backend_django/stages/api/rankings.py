@@ -16,6 +16,7 @@ from backend_django.core.exceptions import (
     NotAuthenticatedError,
     PermissionDeniedError,
 )
+from backend_django.core.roles import is_stage_admin
 from backend_django.stages.models import OfferStatus, StagePeriod, StageOffer, StageRanking
 from backend_django.stages.schemas.rankings import (
     StageRankingCreateSchema,
@@ -88,7 +89,7 @@ class StageRankingController(BaseAPI):
             return NotAuthenticatedError().to_response()
 
         # Check permissions
-        if str(request.user.id) != str(student_id) and not request.user.is_staff:
+        if str(request.user.id) != str(student_id) and not is_stage_admin(request.user):
             return PermissionDeniedError(
                 "Vous ne pouvez pas voir les classements d'un autre etudiant."
             ).to_response()

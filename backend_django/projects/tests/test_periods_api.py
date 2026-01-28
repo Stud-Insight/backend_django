@@ -5,8 +5,10 @@ Tests for TER and Stage periods API endpoints.
 from datetime import date, timedelta
 
 import pytest
+from django.contrib.auth.models import Group
 from django.test import Client
 
+from backend_django.core.roles import Role
 from backend_django.projects.models import PeriodStatus, StagePeriod, TERPeriod
 from backend_django.users.models import User
 
@@ -25,15 +27,18 @@ def student_user(db):
 
 @pytest.fixture
 def staff_user(db):
-    """Create a staff user."""
-    return User.objects.create_user(
+    """Create a staff user (Respo TER) for TER period access."""
+    user = User.objects.create_user(
         email="staff@test.fr",
         password="testpass123",
         first_name="Staff",
         last_name="User",
         is_active=True,
-        is_staff=True,
     )
+    # Add Respo TER role for TER admin access
+    respo_ter_group, _ = Group.objects.get_or_create(name=Role.RESPO_TER.value)
+    user.groups.add(respo_ter_group)
+    return user
 
 
 @pytest.fixture

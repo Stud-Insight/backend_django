@@ -99,3 +99,60 @@ def user_has_any_role(user, roles: list[Role | str]) -> bool:
 
     role_names = [r.value if isinstance(r, Role) else r for r in roles]
     return user.groups.filter(name__in=role_names).exists()
+
+
+# ============================================================================
+# Convenience functions for common permission checks
+# ============================================================================
+
+
+def is_admin(user) -> bool:
+    """
+    Check if user has admin privileges.
+
+    Returns True for superusers or users with Admin role.
+    """
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    return user_has_role(user, Role.ADMIN)
+
+
+def is_admin_or_respo(user) -> bool:
+    """
+    Check if user has admin or respo privileges.
+
+    Returns True for superusers or users with Admin, Respo TER, or Respo Stage roles.
+    """
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    return user_has_any_role(user, [Role.ADMIN, Role.RESPO_TER, Role.RESPO_STAGE])
+
+
+def is_ter_admin(user) -> bool:
+    """
+    Check if user can administer TER-related features.
+
+    Returns True for superusers or users with Admin or Respo TER roles.
+    """
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    return user_has_any_role(user, [Role.ADMIN, Role.RESPO_TER])
+
+
+def is_stage_admin(user) -> bool:
+    """
+    Check if user can administer Stage-related features.
+
+    Returns True for superusers or users with Admin or Respo Stage roles.
+    """
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    return user_has_any_role(user, [Role.ADMIN, Role.RESPO_STAGE])

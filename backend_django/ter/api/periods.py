@@ -17,6 +17,7 @@ from backend_django.core.exceptions import (
     NotFoundError,
     PermissionDeniedError,
 )
+from backend_django.core.roles import is_ter_admin
 from backend_django.groups.models import Group
 from backend_django.ter.models import PeriodStatus, SubjectStatus, TERPeriod, TERSubject
 from backend_django.ter.schemas.periods import (
@@ -98,7 +99,7 @@ class TERPeriodController(BaseAPI):
 
         periods = TERPeriod.objects.all()
 
-        if not request.user.is_staff:
+        if not is_ter_admin(request.user):
             # Non-staff users only see periods where they are enrolled
             periods = periods.filter(
                 enrolled_students=request.user,
@@ -126,8 +127,8 @@ class TERPeriodController(BaseAPI):
 
         period = get_object_or_404(TERPeriod, id=period_id)
 
-        # Non-staff users can only see open periods
-        if not request.user.is_staff and period.status != PeriodStatus.OPEN:
+        # Non-admin users can only see open periods
+        if not is_ter_admin(request.user) and period.status != PeriodStatus.OPEN:
             return NotFoundError("Periode TER non trouvee.").to_response()
 
         return 200, ter_period_to_detail_schema(period)
@@ -147,7 +148,7 @@ class TERPeriodController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not request.user.is_staff:
+        if not is_ter_admin(request.user):
             return PermissionDeniedError(
                 "Seuls les responsables TER peuvent creer des periodes."
             ).to_response()
@@ -195,7 +196,7 @@ class TERPeriodController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not request.user.is_staff:
+        if not is_ter_admin(request.user):
             return PermissionDeniedError(
                 "Seuls les responsables TER peuvent modifier des periodes."
             ).to_response()
@@ -248,7 +249,7 @@ class TERPeriodController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not request.user.is_staff:
+        if not is_ter_admin(request.user):
             return PermissionDeniedError(
                 "Seuls les responsables TER peuvent ouvrir des periodes."
             ).to_response()
@@ -279,7 +280,7 @@ class TERPeriodController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not request.user.is_staff:
+        if not is_ter_admin(request.user):
             return PermissionDeniedError(
                 "Seuls les responsables TER peuvent cloturer des periodes."
             ).to_response()
@@ -313,7 +314,7 @@ class TERPeriodController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not request.user.is_staff:
+        if not is_ter_admin(request.user):
             return PermissionDeniedError(
                 "Seuls les responsables TER peuvent copier des periodes."
             ).to_response()
@@ -373,7 +374,7 @@ class TERPeriodController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not request.user.is_staff:
+        if not is_ter_admin(request.user):
             return PermissionDeniedError(
                 "Seuls les responsables TER peuvent consulter les statistiques."
             ).to_response()

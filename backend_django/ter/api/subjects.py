@@ -17,6 +17,7 @@ from backend_django.core.exceptions import (
     NotFoundError,
     PermissionDeniedError,
 )
+from backend_django.core.roles import is_ter_admin
 from backend_django.ter.models import PeriodStatus, SubjectStatus, TERFavorite, TERPeriod, TERSubject
 from backend_django.ter.schemas.subjects import (
     TERFavoriteSchema,
@@ -112,7 +113,7 @@ class TERSubjectController(BaseAPI):
         subjects = TERSubject.objects.select_related("professor", "ter_period").all()
 
         # Non-staff users only see validated subjects (and their own drafts/submitted)
-        if not request.user.is_staff:
+        if not is_ter_admin(request.user):
             subjects = subjects.filter(
                 models.Q(status=SubjectStatus.VALIDATED) |
                 models.Q(professor=request.user)
@@ -146,7 +147,7 @@ class TERSubjectController(BaseAPI):
         )
 
         # Non-staff/non-owners can only see validated subjects
-        if not request.user.is_staff and not subject.can_be_managed_by(request.user):
+        if not is_ter_admin(request.user) and not subject.can_be_managed_by(request.user):
             if subject.status != SubjectStatus.VALIDATED:
                 return NotFoundError("Sujet TER non trouve.").to_response()
 
@@ -175,7 +176,7 @@ class TERSubjectController(BaseAPI):
 
         # Check TER period exists and is open
         ter_period = get_object_or_404(TERPeriod, id=data.ter_period_id)
-        if ter_period.status != PeriodStatus.OPEN and not request.user.is_staff:
+        if ter_period.status != PeriodStatus.OPEN and not is_ter_admin(request.user):
             return BadRequestError(
                 "La periode TER n'est pas ouverte."
             ).to_response()
@@ -296,7 +297,7 @@ class TERSubjectController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not request.user.is_staff:
+        if not is_ter_admin(request.user):
             return PermissionDeniedError(
                 "Seuls les responsables TER peuvent valider des sujets."
             ).to_response()
@@ -328,7 +329,7 @@ class TERSubjectController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not request.user.is_staff:
+        if not is_ter_admin(request.user):
             return PermissionDeniedError(
                 "Seuls les responsables TER peuvent rejeter des sujets."
             ).to_response()

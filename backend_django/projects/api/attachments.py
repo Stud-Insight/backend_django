@@ -26,6 +26,7 @@ from backend_django.core.exceptions import ErrorSchema
 from backend_django.core.exceptions import NotAuthenticatedError
 from backend_django.core.exceptions import NotOwnerError
 from backend_django.core.exceptions import PermissionDeniedError
+from backend_django.core.roles import is_admin_or_respo
 from backend_django.projects.models import AcademicProject
 from backend_django.projects.models import Attachment
 from backend_django.projects.schemas import AcademicProjectCreateSchema
@@ -88,7 +89,7 @@ class AttachmentsController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not request.user.is_staff:
+        if not is_admin_or_respo(request.user):
             return PermissionDeniedError("Permission staff requise.").to_response()
 
         project = AcademicProject.objects.create(
@@ -225,7 +226,7 @@ class AttachmentsController(BaseAPI):
 
         attachment = get_object_or_404(Attachment, id=attachment_id)
 
-        if attachment.owner_id != request.user.id and not request.user.is_staff:
+        if attachment.owner_id != request.user.id and not is_admin_or_respo(request.user):
             return NotOwnerError().to_response()
 
         attachment.file.delete(save=False)
@@ -274,12 +275,12 @@ class AttachmentsController(BaseAPI):
             project.student_id == request.user.id
             or project.referent_id == request.user.id
             or project.supervisor_id == request.user.id
-            or request.user.is_staff
+            or is_admin_or_respo(request.user)
         ):
             return PermissionDeniedError().to_response()
 
         # Check if user owns the attachment
-        if attachment.owner_id != request.user.id and not request.user.is_staff:
+        if attachment.owner_id != request.user.id and not is_admin_or_respo(request.user):
             return NotOwnerError("Vous n'êtes pas le propriétaire de ce fichier.").to_response()
 
         project.files.add(attachment)

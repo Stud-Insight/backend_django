@@ -126,34 +126,36 @@ class TestRoleBasedAccessControl:
 
     def test_role_change_affects_permissions_immediately(self, role_groups, admin_user):
         """Test that changing roles affects permissions immediately."""
-        # Create a user
+        # Create a user with Admin role
         user = UserFactory(
             email="changeme@test.com",
-            is_staff=True,  # Staff but not superuser
             is_superuser=False,
             is_active=True,
         )
         user.set_password("TestPass123!")
         user.save()
+        # Add Admin role for admin access
+        user.groups.add(role_groups[Role.ADMIN])
 
         client, csrf_token = get_authenticated_client(user, "TestPass123!")
 
-        # Initially can access staff endpoint
+        # Initially can access admin endpoint
         response = client.get("/api/users/")
         assert response.status_code == 200
 
-        # Now admin removes staff status via update
+        # Admin removes Admin role via role endpoint
         admin_client, admin_csrf = get_authenticated_client(admin_user)
-        response = admin_client.put(
-            f"/api/users/{user.id}",
-            data={"is_active": True},  # Just update, keep is_staff through DB
+        response = admin_client.post(
+            f"/api/users/{user.id}/roles/remove",
+            data={"roles": [Role.ADMIN.value]},
             content_type="application/json",
             HTTP_X_CSRFTOKEN=admin_csrf,
         )
-
-        # User still has access (staff status wasn't changed via this endpoint)
-        response = client.get("/api/users/")
         assert response.status_code == 200
+
+        # User no longer has access (Admin role was removed)
+        response = client.get("/api/users/")
+        assert response.status_code == 403
 
 
 @pytest.mark.django_db
