@@ -10,6 +10,7 @@ from backend_django.users.schemas.admin import SetUserRoleSchema
 from backend_django.users.schemas.admin import UserCreateSchema
 from backend_django.users.schemas.admin import UserDetailSchema
 from backend_django.users.schemas.admin import UserListSchema
+from backend_django.users.schemas.admin import UserMinimalSchema
 from backend_django.users.schemas.admin import UserUpdateSchema
 from backend_django.users.schemas.auth import ActivateCheckSchema
 from backend_django.users.schemas.auth import ActivateWithPasswordSchema
@@ -54,6 +55,7 @@ __all__ = [
     "UserUpdateSchema",
     "UserListSchema",
     "UserDetailSchema",
+    "UserMinimalSchema",
     "CSVImportErrorSchema",
     "CSVImportResultSchema",
     # Role schemas

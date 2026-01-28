@@ -9,7 +9,8 @@ from django.contrib.auth.models import Group
 from django.test import Client
 
 from backend_django.core.roles import Role
-from backend_django.projects.models import PeriodStatus, StagePeriod, TERPeriod
+from backend_django.stages.models import StagePeriod
+from backend_django.ter.models import PeriodStatus, TERPeriod
 from backend_django.users.models import User
 
 

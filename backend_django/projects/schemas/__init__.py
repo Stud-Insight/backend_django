@@ -1,26 +1,16 @@
 """
-Project, attachment, and proposal schemas.
+Project schemas - exports attachment and group schemas.
+
+Legacy AcademicProject and Proposal schemas have been removed.
+Use TER schemas (backend_django.ter.schemas) for TER workflows.
+Use Stage schemas (backend_django.stages.schemas) for Stage workflows.
 """
 
-from backend_django.projects.schemas.attachments import AcademicProjectCreateSchema as LegacyAcademicProjectCreateSchema
-from backend_django.projects.schemas.attachments import AcademicProjectSchema
+# Attachments
 from backend_django.projects.schemas.attachments import AttachmentSchema
 from backend_django.projects.schemas.attachments import AttachmentUploadResponse
-from backend_django.projects.schemas.projects import AcademicProjectCreateSchema
-from backend_django.projects.schemas.projects import AcademicProjectDetailSchema
-from backend_django.projects.schemas.projects import AcademicProjectListSchema
-from backend_django.projects.schemas.projects import AcademicProjectUpdateSchema
-from backend_django.projects.schemas.projects import AttachmentMinimalSchema
-from backend_django.projects.schemas.projects import MessageSchema
-from backend_django.projects.schemas.projects import ProjectStatusUpdateSchema
-from backend_django.projects.schemas.projects import UserMinimalSchema
-from backend_django.projects.schemas.proposals import ApplicationCreateSchema
-from backend_django.projects.schemas.proposals import ApplicationSchema
-from backend_django.projects.schemas.proposals import ProposalCreateSchema
-from backend_django.projects.schemas.proposals import ProposalDetailSchema
-from backend_django.projects.schemas.proposals import ProposalListSchema
-from backend_django.projects.schemas.proposals import ProposalStatusUpdateSchema
-from backend_django.projects.schemas.proposals import ProposalUpdateSchema
+
+# Groups
 from backend_django.projects.schemas.groups import GroupCreateSchema
 from backend_django.projects.schemas.groups import GroupDetailSchema
 from backend_django.projects.schemas.groups import GroupListSchema
@@ -28,65 +18,45 @@ from backend_django.projects.schemas.groups import GroupUpdateSchema
 from backend_django.projects.schemas.groups import InvitationCreateSchema
 from backend_django.projects.schemas.groups import InvitationResponseSchema
 from backend_django.projects.schemas.groups import InvitationSchema
-from backend_django.projects.schemas.groups import TransferLeadershipSchema
 from backend_django.projects.schemas.groups import StagePeriodSchema
 from backend_django.projects.schemas.groups import TERPeriodSchema
+from backend_django.projects.schemas.groups import TransferLeadershipSchema
 
-# Re-export new TER schemas
-from backend_django.ter.schemas import (  # noqa: E402
-    TERPeriodDetailSchema,
-    TERPeriodCreateSchema,
-    TERPeriodUpdateSchema,
-    TERPeriodCopySchema,
-    TERSubjectListSchema,
-    TERSubjectDetailSchema,
-    TERSubjectCreateSchema,
-    TERSubjectUpdateSchema,
+# Re-export TER schemas for convenience
+from backend_django.ter.schemas import (
     TERFavoriteSchema,
+    TERPeriodCopySchema,
+    TERPeriodCreateSchema,
+    TERPeriodDetailSchema,
+    TERPeriodUpdateSchema,
+    TERRankingCreateSchema,
     TERRankingItemSchema,
     TERRankingListSchema,
-    TERRankingCreateSchema,
+    TERSubjectCreateSchema,
+    TERSubjectDetailSchema,
+    TERSubjectListSchema,
+    TERSubjectUpdateSchema,
 )
 
-# Re-export new Stage schemas
-from backend_django.stages.schemas import (  # noqa: E402
-    StagePeriodDetailSchema,
-    StagePeriodCreateSchema,
-    StagePeriodUpdateSchema,
-    StageOfferListSchema,
-    StageOfferDetailSchema,
-    StageOfferCreateSchema,
-    StageOfferUpdateSchema,
+# Re-export Stage schemas for convenience
+from backend_django.stages.schemas import (
     StageFavoriteSchema,
+    StageOfferCreateSchema,
+    StageOfferDetailSchema,
+    StageOfferListSchema,
+    StageOfferUpdateSchema,
+    StagePeriodCreateSchema,
+    StagePeriodDetailSchema,
+    StagePeriodUpdateSchema,
+    StageRankingCreateSchema,
     StageRankingItemSchema,
     StageRankingListSchema,
-    StageRankingCreateSchema,
 )
 
 __all__ = [
-    # Attachments (legacy)
+    # Attachments
     "AttachmentSchema",
     "AttachmentUploadResponse",
-    "AcademicProjectSchema",  # Legacy schema for backward compatibility
-    "LegacyAcademicProjectCreateSchema",
-    # Attachments (new)
-    "AttachmentMinimalSchema",
-    # Projects
-    "UserMinimalSchema",
-    "AcademicProjectListSchema",
-    "AcademicProjectDetailSchema",
-    "AcademicProjectCreateSchema",
-    "AcademicProjectUpdateSchema",
-    "ProjectStatusUpdateSchema",
-    "MessageSchema",
-    # Proposals
-    "ProposalListSchema",
-    "ProposalDetailSchema",
-    "ProposalCreateSchema",
-    "ProposalUpdateSchema",
-    "ProposalStatusUpdateSchema",
-    "ApplicationSchema",
-    "ApplicationCreateSchema",
     # Groups
     "GroupListSchema",
     "GroupDetailSchema",
@@ -100,7 +70,7 @@ __all__ = [
     "InvitationResponseSchema",
     # Leadership
     "TransferLeadershipSchema",
-    # New TER schemas
+    # TER schemas
     "TERPeriodDetailSchema",
     "TERPeriodCreateSchema",
     "TERPeriodUpdateSchema",
@@ -113,7 +83,7 @@ __all__ = [
     "TERRankingItemSchema",
     "TERRankingListSchema",
     "TERRankingCreateSchema",
-    # New Stage schemas
+    # Stage schemas
     "StagePeriodDetailSchema",
     "StagePeriodCreateSchema",
     "StagePeriodUpdateSchema",

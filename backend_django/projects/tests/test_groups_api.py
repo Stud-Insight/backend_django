@@ -12,7 +12,6 @@ from django.test import Client
 from backend_django.core.roles import Role
 from backend_django.groups.models import Group as StudentGroup
 from backend_django.groups.models import GroupStatus
-from backend_django.projects.models import AcademicProjectType
 from backend_django.projects.models import PeriodStatus
 from backend_django.projects.models import TERPeriod
 from backend_django.users.tests.factories import UserFactory
@@ -171,7 +170,7 @@ class TestCreateGroupEndpoint:
         data = response.json()
         assert data["name"] == "ML Enthusiasts"
         assert data["status"] == GroupStatus.OUVERT
-        assert data["project_type"] == AcademicProjectType.SRW
+        assert data["project_type"] == "TER"
         assert data["leader"]["email"] == student_user.email
         assert data["member_count"] == 1
         assert len(data["members"]) == 1
@@ -225,7 +224,7 @@ class TestCreateGroupEndpoint:
         StudentGroup.objects.create(
             name="First Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -279,13 +278,13 @@ class TestListGroupsEndpoint:
         StudentGroup.objects.create(
             name="Group A",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         StudentGroup.objects.create(
             name="Group B",
             leader=another_student,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -307,13 +306,13 @@ class TestListGroupsEndpoint:
         StudentGroup.objects.create(
             name="Group Period 1",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         StudentGroup.objects.create(
             name="Group Period 2",
             leader=another_student,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_draft,
         )
 
@@ -335,7 +334,7 @@ class TestMyGroupsEndpoint:
         group1 = StudentGroup.objects.create(
             name="My Led Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -343,7 +342,7 @@ class TestMyGroupsEndpoint:
         group2 = StudentGroup.objects.create(
             name="Other Group",
             leader=another_student,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         group2.members.add(student_user)
@@ -352,7 +351,7 @@ class TestMyGroupsEndpoint:
         StudentGroup.objects.create(
             name="Not My Group",
             leader=another_student,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -372,7 +371,7 @@ class TestMyGroupsEndpoint:
         group1 = StudentGroup.objects.create(
             name="Group Period 1",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -397,7 +396,7 @@ class TestMyGroupsEndpoint:
         group2 = StudentGroup.objects.create(
             name="Group Period 2",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=another_period,
         )
 
@@ -430,7 +429,7 @@ class TestGetGroupEndpoint:
         group = StudentGroup.objects.create(
             name="Detail Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -459,7 +458,7 @@ class TestInviteToGroupEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -484,7 +483,7 @@ class TestInviteToGroupEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -505,7 +504,7 @@ class TestInviteToGroupEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         group.form_group()
@@ -528,7 +527,7 @@ class TestInviteToGroupEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         group.members.add(another_student)
@@ -550,7 +549,7 @@ class TestInviteToGroupEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -572,7 +571,7 @@ class TestInviteToGroupEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -606,7 +605,7 @@ class TestRespondToInvitationEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -641,7 +640,7 @@ class TestRespondToInvitationEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -676,7 +675,7 @@ class TestRespondToInvitationEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -710,7 +709,7 @@ class TestMyInvitationsEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -744,7 +743,7 @@ class TestAutoDeclineInvitations:
         group1 = StudentGroup.objects.create(
             name="Group 1",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -755,7 +754,7 @@ class TestAutoDeclineInvitations:
         group2 = StudentGroup.objects.create(
             name="Group 2",
             leader=third_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -818,7 +817,7 @@ class TestAutoDeclineInvitations:
         group_ter = StudentGroup.objects.create(
             name="TER Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -830,7 +829,7 @@ class TestAutoDeclineInvitations:
         group_stage = StudentGroup.objects.create(
             name="Stage Group",
             leader=third_user,
-            project_type=AcademicProjectType.INTERNSHIP,
+            project_type="Stage",
             stage_period=stage_period,
         )
 
@@ -872,7 +871,7 @@ class TestLeaveGroupEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         group.members.add(another_student)
@@ -897,7 +896,7 @@ class TestLeaveGroupEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         group.members.add(another_student)
@@ -928,7 +927,7 @@ class TestLeaveGroupEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         group.members.add(another_student)
@@ -952,7 +951,7 @@ class TestLeaveGroupEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -972,7 +971,7 @@ class TestLeaveGroupEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -997,7 +996,7 @@ class TestTransferLeadershipEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         group.members.add(another_student)
@@ -1025,7 +1024,7 @@ class TestTransferLeadershipEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         group.members.add(another_student)
@@ -1047,7 +1046,7 @@ class TestTransferLeadershipEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         # another_student is NOT added as member
@@ -1069,7 +1068,7 @@ class TestTransferLeadershipEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -1090,7 +1089,7 @@ class TestTransferLeadershipEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         group.members.add(another_student)
@@ -1132,7 +1131,7 @@ class TestAutoGroupStatusTransitions:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         assert group.status == GroupStatus.OUVERT
@@ -1165,7 +1164,7 @@ class TestAutoGroupStatusTransitions:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         assert group.status == GroupStatus.OUVERT
@@ -1176,7 +1175,7 @@ class TestAutoGroupStatusTransitions:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         group.members.add(another_student)
@@ -1209,7 +1208,7 @@ class TestCloseGroupEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         group.members.add(another_student)
@@ -1238,7 +1237,7 @@ class TestCloseGroupEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         assert group.status == GroupStatus.OUVERT
@@ -1259,7 +1258,7 @@ class TestCloseGroupEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         group.members.add(another_student)
@@ -1283,7 +1282,7 @@ class TestCloseGroupEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         group.members.add(another_student)
@@ -1306,7 +1305,7 @@ class TestCloseGroupEndpoint:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         group.members.add(another_student)
@@ -1337,7 +1336,7 @@ class TestFSMTransitionConstraints:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         assert group.status == GroupStatus.OUVERT
@@ -1351,7 +1350,7 @@ class TestFSMTransitionConstraints:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         group.members.add(another_student)
@@ -1371,7 +1370,7 @@ class TestFSMTransitionConstraints:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         group.members.add(another_student)
@@ -1410,7 +1409,7 @@ class TestDeadlineValidation:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_formation_ended,
         )
 
@@ -1434,7 +1433,7 @@ class TestDeadlineValidation:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_formation_ended,
         )
 
@@ -1464,7 +1463,7 @@ class TestDeadlineValidation:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_formation_ended,
         )
 
@@ -1532,7 +1531,7 @@ class TestDashboardEndpoints:
         group = StudentGroup.objects.create(
             name="Complete Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         group.members.add(another_student)
@@ -1547,7 +1546,7 @@ class TestDashboardEndpoints:
         incomplete_group = StudentGroup.objects.create(
             name="Incomplete Group",
             leader=third_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -1571,7 +1570,7 @@ class TestDashboardEndpoints:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -1592,7 +1591,7 @@ class TestDashboardEndpoints:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 
@@ -1623,7 +1622,7 @@ class TestDashboardEndpoints:
         complete_group = StudentGroup.objects.create(
             name="Complete Group",
             leader=student_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
         complete_group.members.add(another_student)
@@ -1636,7 +1635,7 @@ class TestDashboardEndpoints:
         incomplete_group = StudentGroup.objects.create(
             name="Incomplete Group",
             leader=third_user,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period_open,
         )
 

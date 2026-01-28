@@ -11,7 +11,6 @@ from django_fsm import TransitionNotAllowed
 
 from backend_django.groups.models import Group as StudentGroup
 from backend_django.groups.models import GroupStatus
-from backend_django.projects.models import AcademicProjectType
 from backend_django.projects.models import PeriodStatus
 from backend_django.projects.models import StagePeriod
 from backend_django.projects.models import TERPeriod
@@ -126,14 +125,14 @@ class TestStudentGroup:
         group = StudentGroup.objects.create(
             name="Team Alpha",
             leader=leader,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period,
         )
 
         assert group.name == "Team Alpha"
         assert group.leader == leader
         assert group.status == GroupStatus.OUVERT
-        assert group.project_type == AcademicProjectType.SRW
+        assert group.project_type == "TER"
         assert group.ter_period == ter_period
         assert group.stage_period is None
 
@@ -142,7 +141,7 @@ class TestStudentGroup:
         group = StudentGroup.objects.create(
             name="Internship Team",
             leader=leader,
-            project_type=AcademicProjectType.INTERNSHIP,
+            project_type="Stage",
             stage_period=stage_period,
         )
 
@@ -154,7 +153,7 @@ class TestStudentGroup:
         group = StudentGroup.objects.create(
             name="Team Beta",
             leader=leader,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period,
         )
 
@@ -166,7 +165,7 @@ class TestStudentGroup:
         group = StudentGroup.objects.create(
             name="Team Gamma",
             leader=leader,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period,
         )
 
@@ -178,7 +177,7 @@ class TestStudentGroup:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=leader,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period,
         )
         group.members.add(*members)
@@ -191,7 +190,7 @@ class TestStudentGroup:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=leader,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period,
         )
         group.members.add(members[0])
@@ -205,7 +204,7 @@ class TestStudentGroup:
         group = StudentGroup.objects.create(
             name="TER Group",
             leader=leader,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period,
         )
 
@@ -216,7 +215,7 @@ class TestStudentGroup:
         group = StudentGroup.objects.create(
             name="Stage Group",
             leader=leader,
-            project_type=AcademicProjectType.INTERNSHIP,
+            project_type="Stage",
             stage_period=stage_period,
         )
 
@@ -232,7 +231,7 @@ class TestStudentGroupCanAddMember:
         group = StudentGroup.objects.create(
             name="Open Group",
             leader=leader,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period,
         )
 
@@ -243,7 +242,7 @@ class TestStudentGroupCanAddMember:
         group = StudentGroup.objects.create(
             name="Formed Group",
             leader=leader,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period,
         )
         group.form_group()
@@ -256,7 +255,7 @@ class TestStudentGroupCanAddMember:
         group = StudentGroup.objects.create(
             name="Closed Group",
             leader=leader,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period,
         )
         group.form_group()
@@ -270,7 +269,7 @@ class TestStudentGroupCanAddMember:
         group = StudentGroup.objects.create(
             name="Full Group",
             leader=leader,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period,
         )
         # Add members to reach max (4 total with leader)
@@ -284,7 +283,7 @@ class TestStudentGroupCanAddMember:
         group = StudentGroup.objects.create(
             name="Stage Group",
             leader=leader,
-            project_type=AcademicProjectType.INTERNSHIP,
+            project_type="Stage",
             stage_period=stage_period,
         )
         # Add many members - should always be allowed since Stage has no limit
@@ -303,7 +302,7 @@ class TestStudentGroupCanRemoveMember:
         group = StudentGroup.objects.create(
             name="Open Group",
             leader=leader,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period,
         )
         group.members.add(members[0])
@@ -315,7 +314,7 @@ class TestStudentGroupCanRemoveMember:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=leader,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period,
         )
 
@@ -326,7 +325,7 @@ class TestStudentGroupCanRemoveMember:
         group = StudentGroup.objects.create(
             name="Formed Group",
             leader=leader,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period,
         )
         group.members.add(members[0])
@@ -340,7 +339,7 @@ class TestStudentGroupCanRemoveMember:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=leader,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period,
         )
 
@@ -351,7 +350,7 @@ class TestStudentGroupCanRemoveMember:
         group = StudentGroup.objects.create(
             name="Stage Group",
             leader=leader,
-            project_type=AcademicProjectType.INTERNSHIP,
+            project_type="Stage",
             stage_period=stage_period,
         )
         group.members.add(members[0])
@@ -368,7 +367,7 @@ class TestStudentGroupFSMTransitions:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=leader,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period,
         )
 
@@ -384,7 +383,7 @@ class TestStudentGroupFSMTransitions:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=leader,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period,
         )
         group.form_group()
@@ -402,7 +401,7 @@ class TestStudentGroupFSMTransitions:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=leader,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period,
         )
         group.form_group()
@@ -420,7 +419,7 @@ class TestStudentGroupFSMTransitions:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=leader,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period,
         )
         group.form_group()
@@ -434,7 +433,7 @@ class TestStudentGroupFSMTransitions:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=leader,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period,
         )
 
@@ -446,7 +445,7 @@ class TestStudentGroupFSMTransitions:
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=leader,
-            project_type=AcademicProjectType.SRW,
+            project_type="TER",
             ter_period=ter_period,
         )
         group.form_group()
@@ -468,7 +467,7 @@ class TestStudentGroupConstraints:
             StudentGroup.objects.create(
                 name="Invalid Group",
                 leader=leader,
-                project_type=AcademicProjectType.SRW,
+                project_type="TER",
                 ter_period=ter_period,
                 stage_period=stage_period,
             )
@@ -479,5 +478,5 @@ class TestStudentGroupConstraints:
             StudentGroup.objects.create(
                 name="Invalid Group",
                 leader=leader,
-                project_type=AcademicProjectType.SRW,
+                project_type="TER",
             )

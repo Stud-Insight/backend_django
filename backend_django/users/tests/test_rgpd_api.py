@@ -107,16 +107,16 @@ class TestRGPDExportOwnData:
         assert data["profile"]["first_name"] == "Regular"
         assert data["profile"]["last_name"] == "User"
 
-    def test_export_includes_groups(self, regular_user):
-        """Test export includes group membership."""
+    def test_export_includes_roles(self, regular_user):
+        """Test export includes role membership."""
         client, _ = get_authenticated_client(regular_user, "UserPass123!")
 
         response = client.get("/api/rgpd/export")
         data = response.json()["data"]
 
-        assert "groups" in data
-        assert len(data["groups"]) == 1
-        assert data["groups"][0]["name"] == "Étudiant"
+        assert "roles" in data
+        assert len(data["roles"]) == 1
+        assert data["roles"][0]["name"] == "Étudiant"
 
     def test_export_includes_conversations(self, user_with_messages):
         """Test export includes conversations and messages."""

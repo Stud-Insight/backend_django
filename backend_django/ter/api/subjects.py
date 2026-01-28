@@ -17,7 +17,7 @@ from backend_django.core.exceptions import (
     NotFoundError,
     PermissionDeniedError,
 )
-from backend_django.core.roles import is_ter_admin
+from backend_django.core.roles import is_ter_admin, Role, user_has_role
 from backend_django.ter.models import PeriodStatus, SubjectStatus, TERFavorite, TERPeriod, TERSubject
 from backend_django.ter.schemas.subjects import (
     TERFavoriteSchema,
@@ -173,6 +173,12 @@ class TERSubjectController(BaseAPI):
         """
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
+
+        # Only Encadrants and TER admins can create subjects
+        if not is_ter_admin(request.user) and not user_has_role(request.user, Role.ENCADRANT):
+            return PermissionDeniedError(
+                "Seuls les encadrants peuvent proposer des sujets TER."
+            ).to_response()
 
         # Check TER period exists and is open
         ter_period = get_object_or_404(TERPeriod, id=data.ter_period_id)

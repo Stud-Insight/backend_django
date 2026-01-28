@@ -7,17 +7,19 @@ These tests simulate complete user scenarios:
 - RGPD deletion workflow with data anonymization
 """
 
+from datetime import date
+from datetime import timedelta
+
 import pytest
-from django.contrib.auth.models import Group
+from django.contrib.auth.models import Group as DjangoGroup
 from django.test import Client
 
 from backend_django.chat.models import Conversation
 from backend_django.chat.models import Message
 from backend_django.core.roles import Role
-from backend_django.projects.models import AcademicProject
-from backend_django.projects.models import AcademicProjectType
-from backend_django.projects.models import Proposal
-from backend_django.projects.models import ProposalApplication
+from backend_django.groups.models import Group as StudentGroup
+from backend_django.projects.models import PeriodStatus
+from backend_django.projects.models import TERPeriod
 from backend_django.users.models import User
 from backend_django.users.tests.factories import UserFactory
 
@@ -27,8 +29,28 @@ def role_groups(db):
     """Create all role groups."""
     groups = {}
     for role in Role:
-        groups[role] = Group.objects.get_or_create(name=role.value)[0]
+        groups[role] = DjangoGroup.objects.get_or_create(name=role.value)[0]
     return groups
+
+
+@pytest.fixture
+def ter_period(db):
+    """Create a TER period for testing."""
+    today = date.today()
+    return TERPeriod.objects.create(
+        name="TER 2024-2025 S1",
+        academic_year="2024-2025",
+        status=PeriodStatus.OPEN,
+        group_formation_start=today,
+        group_formation_end=today + timedelta(days=30),
+        subject_selection_start=today + timedelta(days=31),
+        subject_selection_end=today + timedelta(days=60),
+        assignment_date=today + timedelta(days=61),
+        project_start=today + timedelta(days=70),
+        project_end=today + timedelta(days=180),
+        min_group_size=1,
+        max_group_size=4,
+    )
 
 
 @pytest.fixture
@@ -74,10 +96,8 @@ class TestUserDataExportWorkflow:
     3. Student receives comprehensive JSON with all their data
     """
 
-    def test_student_exports_complete_data(self, role_groups, superadmin):
+    def test_student_exports_complete_data(self, role_groups, superadmin, ter_period):
         """Test complete data export workflow for a student."""
-        from datetime import date
-
         # Setup: Create student with various data
         admin_client, csrf, _ = authenticated_session(
             superadmin.email, "SuperSecure123!"
@@ -89,7 +109,7 @@ class TestUserDataExportWorkflow:
             data={
                 "email": "alice@etu.umontpellier.fr",
                 "first_name": "Alice",
-                "last_name": "Étudiant",
+                "last_name": "Etudiant",
                 "groups": ["Étudiant"],
             },
             content_type="application/json",
@@ -104,39 +124,23 @@ class TestUserDataExportWorkflow:
         student.is_active = True
         student.save()
 
-        # Create some project data for the student
-        supervisor = UserFactory(is_active=True)
-        AcademicProject.objects.create(
-            student=student,
-            supervisor=supervisor,
-            subject="Machine Learning pour la détection de fraude",
-            project_type=AcademicProjectType.SRW,
-            start_date=date.today(),
-            end_date=date.today(),
-            description="Projet de TER sur le ML",
+        # Create a student group
+        other_student = UserFactory(is_active=True)
+        group = StudentGroup.objects.create(
+            name="Groupe ML",
+            leader=student,
+            ter_period=ter_period,
+            project_type="TER",
         )
+        group.members.add(student, other_student)
 
         # Create a conversation with messages
         conversation = Conversation.objects.create(name="Discussion TER")
-        conversation.participants.add(student, supervisor)
+        conversation.participants.add(student, other_student)
         Message.objects.create(
             conversation=conversation,
             sender=student,
             content="Bonjour, j'ai une question sur le projet.",
-        )
-
-        # Create a proposal application
-        proposal = Proposal.objects.create(
-            title="Autre sujet intéressant",
-            description="Description du sujet",
-            project_type=AcademicProjectType.SRW,
-            created_by=supervisor,
-            academic_year="2024-2025",
-        )
-        ProposalApplication.objects.create(
-            proposal=proposal,
-            applicant=student,
-            motivation="Je suis très motivé",
         )
 
         # Step 1: Student logs in and exports data
@@ -153,21 +157,18 @@ class TestUserDataExportWorkflow:
         assert data["profile"]["email"] == "alice@etu.umontpellier.fr"
         assert data["profile"]["first_name"] == "Alice"
 
-        # Verify groups
-        assert len(data["groups"]) == 1
-        assert data["groups"][0]["name"] == "Étudiant"
+        # Verify roles
+        assert len(data["roles"]) == 1
+        assert data["roles"][0]["name"] == "Étudiant"
 
-        # Verify projects
-        assert len(data["projects_as_student"]) == 1
-        assert "Machine Learning" in data["projects_as_student"][0]["subject"]
+        # Verify student groups
+        assert len(data["student_groups"]) == 1
+        assert data["student_groups"][0]["name"] == "Groupe ML"
+        assert data["student_groups"][0]["is_leader"] is True
 
         # Verify conversations
         assert len(data["conversations"]) == 1
         assert len(data["conversations"][0]["messages"]) == 1
-
-        # Verify applications
-        assert len(data["proposal_applications"]) == 1
-        assert data["proposal_applications"][0]["motivation"] == "Je suis très motivé"
 
 
 @pytest.mark.django_db
@@ -180,13 +181,11 @@ class TestAccountDeletionWorkflow:
     2. Admin exports user data (for record)
     3. Admin confirms deletion
     4. All personal data is anonymized
-    5. Academic records preserved but anonymized
+    5. Groups handled appropriately
     """
 
-    def test_complete_rgpd_deletion_workflow(self, role_groups, superadmin):
+    def test_complete_rgpd_deletion_workflow(self, role_groups, superadmin, ter_period):
         """Test complete RGPD deletion workflow."""
-        from datetime import date
-
         # Setup: Create user with comprehensive data
         admin_client, csrf, _ = authenticated_session(
             superadmin.email, "SuperSecure123!"
@@ -199,7 +198,7 @@ class TestAccountDeletionWorkflow:
                 "email": "todelete@example.com",
                 "first_name": "Jean",
                 "last_name": "Supprime",
-                "groups": ["Étudiant", "Encadrant"],
+                "groups": ["Etudiant", "Encadrant"],
             },
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf,
@@ -212,15 +211,15 @@ class TestAccountDeletionWorkflow:
         user.is_active = True
         user.save()
 
-        # Create project where user is student
-        project = AcademicProject.objects.create(
-            student=user,
-            subject="Projet à conserver",
-            project_type=AcademicProjectType.SRW,
-            start_date=date.today(),
-            end_date=date.today(),
+        # Create group where user is a member
+        leader = UserFactory(is_active=True)
+        group = StudentGroup.objects.create(
+            name="Groupe Test",
+            leader=leader,
+            ter_period=ter_period,
+            project_type="TER",
         )
-        project_id = project.id
+        group.members.add(leader, user)
 
         # Create conversations
         other_user = UserFactory(is_active=True)
@@ -268,18 +267,16 @@ class TestAccountDeletionWorkflow:
         # Step 4: Verify anonymization
         user.refresh_from_db()
         assert user.first_name == "Utilisateur"
-        assert user.last_name == "Supprimé"
+        assert user.last_name == "Supprime"
         assert user.is_active is False
         assert user.groups.count() == 0
 
-        # Step 5: Verify academic records preserved
-        project = AcademicProject.objects.get(id=project_id)
-        assert project.subject == "Projet à conserver"  # Subject preserved
-        assert project.student_id == user.id  # Link preserved (user is anonymized)
+        # Verify user removed from student group
+        assert not group.members.filter(id=user.id).exists()
 
         # Verify messages anonymized
         message = Message.objects.filter(conversation=conversation, sender=user).first()
-        assert message.content == "[Message supprimé - Compte RGPD]"
+        assert message.content == "[Message supprime - Compte RGPD]"
 
 
 @pytest.mark.django_db
@@ -368,21 +365,18 @@ class TestMultiRoleUserDeletionWorkflow:
     """
     E2E Test: Deletion of user with multiple roles and relationships.
 
-    Scenario: A professor who is Encadrant and Respo TER gets deleted:
-    1. Their projects as referent/supervisor should be cleared
-    2. Their proposals should be preserved (but linked to anonymized user)
-    3. All roles should be removed
+    Scenario: A user who is Encadrant and Respo TER and leads groups gets deleted:
+    1. Their led groups should transfer leadership or be deleted
+    2. All roles should be removed
     """
 
-    def test_multi_role_user_deletion(self, role_groups, superadmin):
+    def test_multi_role_user_deletion(self, role_groups, superadmin, ter_period):
         """Test deletion of user with multiple roles."""
-        from datetime import date
-
         admin_client, csrf, _ = authenticated_session(
             superadmin.email, "SuperSecure123!"
         )
 
-        # Create professor with multiple roles
+        # Create user with multiple roles
         response = admin_client.post(
             "/api/users/create",
             data={
@@ -401,28 +395,18 @@ class TestMultiRoleUserDeletionWorkflow:
         prof.is_active = True
         prof.save()
 
-        # Create student for the project
+        # Create student for group
         student = UserFactory(is_active=True)
 
-        # Create project where prof is supervisor
-        project = AcademicProject.objects.create(
-            student=student,
-            supervisor=prof,
-            subject="Projet supervisé",
-            project_type=AcademicProjectType.SRW,
-            start_date=date.today(),
-            end_date=date.today(),
+        # Create group led by prof with other member
+        group = StudentGroup.objects.create(
+            name="Groupe Supervise",
+            leader=prof,
+            ter_period=ter_period,
+            project_type="TER",
         )
-
-        # Create proposal by prof
-        proposal = Proposal.objects.create(
-            title="Sujet proposé",
-            description="Description",
-            project_type=AcademicProjectType.SRW,
-            created_by=prof,
-            supervisor=prof,
-            academic_year="2024-2025",
-        )
+        group.members.add(prof, student)
+        group_id = group.id
 
         # Delete professor
         response = admin_client.post(
@@ -437,13 +421,7 @@ class TestMultiRoleUserDeletionWorkflow:
         prof.refresh_from_db()
         assert prof.groups.count() == 0
 
-        # Verify project supervisor cleared
-        project.refresh_from_db()
-        assert project.supervisor is None
-        assert project.student == student  # Student preserved
-
-        # Verify proposal preserved but linked to anonymized user
-        proposal.refresh_from_db()
-        assert proposal.created_by_id == prof.id  # Still linked
-        assert proposal.supervisor is None  # Cleared
-        assert proposal.title == "Sujet proposé"  # Content preserved
+        # Verify group leadership transferred to student
+        group = StudentGroup.objects.get(id=group_id)
+        assert group.leader_id == student.id
+        assert not group.members.filter(id=prof.id).exists()

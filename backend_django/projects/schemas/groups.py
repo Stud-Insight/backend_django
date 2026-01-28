@@ -8,12 +8,12 @@ from uuid import UUID
 from ninja import Schema
 from pydantic import field_validator
 
-from backend_django.projects.schemas.projects import UserMinimalSchema
 from backend_django.stages.schemas.periods import StagePeriodSchema
 from backend_django.ter.schemas.periods import TERPeriodSchema
+from backend_django.users.schemas import UserMinimalSchema
 
 # Re-export for backward compatibility
-__all__ = ["TERPeriodSchema", "StagePeriodSchema"]
+__all__ = ["TERPeriodSchema", "StagePeriodSchema", "UserMinimalSchema"]
 
 
 class GroupListSchema(Schema):

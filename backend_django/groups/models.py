@@ -107,6 +107,16 @@ class Group(BaseModel):
         verbose_name=_("assigned subject"),
     )
 
+    # Assigned offer (set when student is accepted) - for Stage groups
+    assigned_offer = models.ForeignKey(
+        "stages.StageOffer",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assigned_groups",
+        verbose_name=_("assigned offer"),
+    )
+
     class Meta:
         verbose_name = _("student group")
         verbose_name_plural = _("student groups")

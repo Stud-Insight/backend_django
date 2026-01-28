@@ -217,10 +217,10 @@ class GroupController(BaseAPI):
 
         # Validate that exactly one period is specified
         if data.ter_period_id and data.stage_period_id:
-            return BadRequestError("Specifiez soit une periode TER soit une periode Stage, pas les deux.").to_response()
+            return BadRequestError("Spécifiez soit une période TER soit une période Stage, pas les deux.").to_response()
 
         if not data.ter_period_id and not data.stage_period_id:
-            return BadRequestError("Vous devez specifier une periode TER ou Stage.").to_response()
+            return BadRequestError("Vous devez spécifier une période TER ou Stage.").to_response()
 
         ter_period = None
         stage_period = None
@@ -230,16 +230,16 @@ class GroupController(BaseAPI):
             # TER group creation
             ter_period = TERPeriod.objects.filter(id=data.ter_period_id).first()
             if not ter_period:
-                return NotFoundError("Periode TER non trouvee.").to_response()
+                return NotFoundError("Période TER non trouvée.").to_response()
 
             # Check period is open
             if ter_period.status != PeriodStatus.OPEN:
-                return BadRequestError("La periode TER n'est pas ouverte.").to_response()
+                return BadRequestError("La période TER n'est pas ouverte.").to_response()
 
             # Check we're in formation phase
             today = date.today()
             if not (ter_period.group_formation_start <= today <= ter_period.group_formation_end):
-                return BadRequestError("La periode de formation des groupes est terminee.").to_response()
+                return BadRequestError("La période de formation des groupes est terminée.").to_response()
 
             # Check user doesn't already lead a group for this period
             existing_group = Group.objects.filter(
@@ -247,19 +247,19 @@ class GroupController(BaseAPI):
                 ter_period=ter_period,
             ).first()
             if existing_group:
-                return BadRequestError("Vous etes deja leader d'un groupe pour cette periode TER.").to_response()
+                return BadRequestError("Vous êtes déjà leader d'un groupe pour cette période TER.").to_response()
 
-            project_type = "srw"
+            project_type = "TER"
 
         elif data.stage_period_id:
             # Stage group creation
             stage_period = StagePeriod.objects.filter(id=data.stage_period_id).first()
             if not stage_period:
-                return NotFoundError("Periode Stage non trouvee.").to_response()
+                return NotFoundError("Période Stage non trouvée.").to_response()
 
             # Check period is open
             if stage_period.status != PeriodStatus.OPEN:
-                return BadRequestError("La periode Stage n'est pas ouverte.").to_response()
+                return BadRequestError("La période Stage n'est pas ouverte.").to_response()
 
             # Check user doesn't already lead a group for this period
             existing_group = Group.objects.filter(
@@ -267,9 +267,9 @@ class GroupController(BaseAPI):
                 stage_period=stage_period,
             ).first()
             if existing_group:
-                return BadRequestError("Vous etes deja leader d'un groupe pour cette periode Stage.").to_response()
+                return BadRequestError("Vous êtes déjà leader d'un groupe pour cette période Stage.").to_response()
 
-            project_type = "internship"
+            project_type = "Stage"
 
         # Create the group
         group = Group.objects.create(
@@ -318,7 +318,7 @@ class GroupController(BaseAPI):
         if group.ter_period:
             today = date.today()
             if today > group.ter_period.group_formation_end:
-                return BadRequestError("Impossible d'envoyer des invitations apres la deadline de formation.").to_response()
+                return BadRequestError("Impossible d'envoyer des invitations après la deadline de formation.").to_response()
 
         # Check group can accept more members
         if not group.can_add_member():
@@ -327,15 +327,15 @@ class GroupController(BaseAPI):
         # Find the invitee by email
         invitee = User.objects.filter(email=data.invitee_email).first()
         if not invitee:
-            return NotFoundError(f"Aucun utilisateur trouve avec l'email {data.invitee_email}.").to_response()
+            return NotFoundError(f"Aucun utilisateur trouvé avec l'email {data.invitee_email}.").to_response()
 
         # Check invitee is not already a member
         if group.is_member(invitee):
-            return BadRequestError("Cet utilisateur est deja membre du groupe.").to_response()
+            return BadRequestError("Cet utilisateur est déjà membre du groupe.").to_response()
 
         # Check invitee is not the leader
         if group.is_leader(invitee):
-            return BadRequestError("Vous ne pouvez pas vous inviter vous-meme.").to_response()
+            return BadRequestError("Vous ne pouvez pas vous inviter vous-même.").to_response()
 
         # Check no pending invitation exists
         existing = GroupInvitation.objects.filter(
@@ -436,7 +436,7 @@ class GroupController(BaseAPI):
             if group.ter_period:
                 today = date.today()
                 if today > group.ter_period.group_formation_end:
-                    return BadRequestError("Impossible d'accepter une invitation apres la deadline de formation.").to_response()
+                    return BadRequestError("Impossible d'accepter une invitation après la deadline de formation.").to_response()
 
         try:
             if data.accept:
@@ -498,15 +498,15 @@ class GroupController(BaseAPI):
 
         # Check user is a member
         if not group.is_member(request.user):
-            return BadRequestError("Vous n'etes pas membre de ce groupe.").to_response()
+            return BadRequestError("Vous n'êtes pas membre de ce groupe.").to_response()
 
         # Check user is not the leader
         if group.is_leader(request.user):
-            return BadRequestError("Le leader doit transferer le leadership avant de quitter.").to_response()
+            return BadRequestError("Le leader doit transférer le leadership avant de quitter.").to_response()
 
         # Check group is not closed
         if group.status == GroupStatus.CLOTURE:
-            return BadRequestError("Impossible de quitter un groupe cloture.").to_response()
+            return BadRequestError("Impossible de quitter un groupe clôturé.").to_response()
 
         # Remove user from group
         group.members.remove(request.user)
@@ -529,7 +529,7 @@ class GroupController(BaseAPI):
             group.leader.email,
         )
 
-        return 200, MessageSchema(success=True, message="Vous avez quitte le groupe.")
+        return 200, MessageSchema(success=True, message="Vous avez quitté le groupe.")
 
     @http_post(
         "/{group_id}/transfer-leadership",
@@ -558,15 +558,15 @@ class GroupController(BaseAPI):
         # Find the new leader
         new_leader = User.objects.filter(id=data.new_leader_id).first()
         if not new_leader:
-            return NotFoundError("Utilisateur non trouve.").to_response()
+            return NotFoundError("Utilisateur non trouvé.").to_response()
 
         # Check new leader is a member
         if not group.is_member(new_leader):
-            return BadRequestError("Le nouveau leader doit etre membre du groupe.").to_response()
+            return BadRequestError("Le nouveau leader doit être membre du groupe.").to_response()
 
         # Check not transferring to self
         if new_leader.id == request.user.id:
-            return BadRequestError("Vous etes deja le leader.").to_response()
+            return BadRequestError("Vous êtes déjà le leader.").to_response()
 
         # Transfer leadership
         old_leader = group.leader
@@ -615,10 +615,10 @@ class GroupController(BaseAPI):
 
         # Check group is in forme status
         if group.status == GroupStatus.OUVERT:
-            return BadRequestError("Le groupe doit avoir au moins 2 membres pour etre cloture.").to_response()
+            return BadRequestError("Le groupe doit avoir au moins 2 membres pour être clôturé.").to_response()
 
         if group.status == GroupStatus.CLOTURE:
-            return BadRequestError("Le groupe est deja cloture.").to_response()
+            return BadRequestError("Le groupe est déjà clôturé.").to_response()
 
         # Transition to cloture
         try:

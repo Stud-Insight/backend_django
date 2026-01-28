@@ -27,13 +27,14 @@ def collect_user_data(user: User) -> dict[str, Any]:
     - Profile information
     - Groups/roles
     - Conversations and messages
-    - Projects (as student, referent, supervisor)
+    - Student groups (Group model)
+    - TER rankings and favorites
+    - Stage rankings and favorites
     - Attachments
-    - Proposals and applications
     """
     data: dict[str, Any] = {
         "export_date": datetime.now().isoformat(),
-        "export_version": "1.0",
+        "export_version": "2.0",
         "user_id": str(user.id),
     }
 
@@ -50,8 +51,8 @@ def collect_user_data(user: User) -> dict[str, Any]:
         "avatar": user.avatar.url if user.avatar else None,
     }
 
-    # Groups/Roles
-    data["groups"] = [
+    # Django Groups (Roles)
+    data["roles"] = [
         {"id": g.id, "name": g.name}
         for g in user.groups.all()
     ]
@@ -81,45 +82,108 @@ def collect_user_data(user: User) -> dict[str, Any]:
 
         data["conversations"].append(conv_data)
 
-    # Projects as student
-    data["projects_as_student"] = []
-    for project in user.projects_as_student.all():
-        data["projects_as_student"].append({
-            "id": str(project.id),
-            "subject": project.subject,
-            "project_type": project.project_type,
-            "status": project.status,
-            "description": project.description,
-            "academic_year": project.academic_year,
-            "start_date": project.start_date.isoformat() if project.start_date else None,
-            "end_date": project.end_date.isoformat() if project.end_date else None,
-            "company_name": project.company_name,
-            "created": project.created.isoformat(),
+    # Student Groups (new Group model)
+    data["student_groups"] = []
+    for group in user.student_groups.select_related("ter_period", "stage_period", "assigned_subject", "assigned_offer"):
+        group_data = {
+            "id": str(group.id),
+            "name": group.name,
+            "status": group.status,
+            "is_leader": group.leader_id == user.id,
+            "project_type": group.project_type,
+            "created": group.created.isoformat(),
+        }
+        if group.ter_period:
+            group_data["ter_period"] = {
+                "id": str(group.ter_period.id),
+                "name": group.ter_period.name,
+                "academic_year": group.ter_period.academic_year,
+            }
+        if group.stage_period:
+            group_data["stage_period"] = {
+                "id": str(group.stage_period.id),
+                "name": group.stage_period.name,
+                "academic_year": group.stage_period.academic_year,
+            }
+        if group.assigned_subject:
+            group_data["assigned_subject"] = {
+                "id": str(group.assigned_subject.id),
+                "title": group.assigned_subject.title,
+            }
+        if group.assigned_offer:
+            group_data["assigned_offer"] = {
+                "id": str(group.assigned_offer.id),
+                "title": group.assigned_offer.title,
+                "company_name": group.assigned_offer.company_name,
+            }
+        data["student_groups"].append(group_data)
+
+    # Groups led by user
+    data["groups_led"] = []
+    for group in user.led_groups.all():
+        data["groups_led"].append({
+            "id": str(group.id),
+            "name": group.name,
+            "status": group.status,
+            "member_count": group.members.count(),
         })
 
-    # Projects as referent
-    data["projects_as_referent"] = []
-    for project in user.projects_as_referent.all():
-        data["projects_as_referent"].append({
-            "id": str(project.id),
-            "subject": project.subject,
-            "project_type": project.project_type,
-            "status": project.status,
-            "academic_year": project.academic_year,
-            "student_email": project.student.email if project.student else None,
-        })
+    # TER Rankings
+    data["ter_rankings"] = []
+    try:
+        from backend_django.ter.models import TERRanking
+        for ranking in TERRanking.objects.filter(group__members=user).select_related("group", "subject"):
+            data["ter_rankings"].append({
+                "id": str(ranking.id),
+                "group_name": ranking.group.name,
+                "subject_title": ranking.subject.title,
+                "rank": ranking.rank,
+                "created": ranking.created.isoformat(),
+            })
+    except Exception as e:
+        logger.warning(f"Could not export TER rankings: {e}")
 
-    # Projects as supervisor
-    data["projects_as_supervisor"] = []
-    for project in user.projects_as_supervisor.all():
-        data["projects_as_supervisor"].append({
-            "id": str(project.id),
-            "subject": project.subject,
-            "project_type": project.project_type,
-            "status": project.status,
-            "academic_year": project.academic_year,
-            "student_email": project.student.email if project.student else None,
-        })
+    # TER Favorites
+    data["ter_favorites"] = []
+    try:
+        from backend_django.ter.models import TERFavorite
+        for favorite in TERFavorite.objects.filter(student=user).select_related("subject"):
+            data["ter_favorites"].append({
+                "id": str(favorite.id),
+                "subject_title": favorite.subject.title,
+                "created": favorite.created.isoformat(),
+            })
+    except Exception as e:
+        logger.warning(f"Could not export TER favorites: {e}")
+
+    # Stage Rankings
+    data["stage_rankings"] = []
+    try:
+        from backend_django.stages.models import StageRanking
+        for ranking in StageRanking.objects.filter(student=user).select_related("offer"):
+            data["stage_rankings"].append({
+                "id": str(ranking.id),
+                "offer_title": ranking.offer.title,
+                "company_name": ranking.offer.company_name,
+                "rank": ranking.rank,
+                "created": ranking.created.isoformat(),
+            })
+    except Exception as e:
+        logger.warning(f"Could not export Stage rankings: {e}")
+
+    # Stage Favorites
+    data["stage_favorites"] = []
+    try:
+        from backend_django.stages.models import StageFavorite
+        for favorite in StageFavorite.objects.filter(student=user).select_related("offer"):
+            data["stage_favorites"].append({
+                "id": str(favorite.id),
+                "offer_title": favorite.offer.title,
+                "company_name": favorite.offer.company_name,
+                "created": favorite.created.isoformat(),
+            })
+    except Exception as e:
+        logger.warning(f"Could not export Stage favorites: {e}")
 
     # Attachments (files owned by user)
     data["attachments"] = []
@@ -133,39 +197,26 @@ def collect_user_data(user: User) -> dict[str, Any]:
             "file_url": attachment.file.url if attachment.file else None,
         })
 
-    # Proposals created by user
-    data["proposals_created"] = []
-    for proposal in user.created_proposals.all():
-        data["proposals_created"].append({
-            "id": str(proposal.id),
-            "title": proposal.title,
-            "description": proposal.description,
-            "project_type": proposal.project_type,
-            "status": proposal.status,
-            "academic_year": proposal.academic_year,
-            "created": proposal.created.isoformat(),
+    # Group invitations received
+    data["group_invitations_received"] = []
+    for invitation in user.group_invitations.select_related("group"):
+        data["group_invitations_received"].append({
+            "id": str(invitation.id),
+            "group_name": invitation.group.name,
+            "status": invitation.status,
+            "message": invitation.message,
+            "created": invitation.created.isoformat(),
         })
 
-    # Proposals supervised by user
-    data["proposals_supervised"] = []
-    for proposal in user.supervised_proposals.all():
-        data["proposals_supervised"].append({
-            "id": str(proposal.id),
-            "title": proposal.title,
-            "project_type": proposal.project_type,
-            "status": proposal.status,
-            "academic_year": proposal.academic_year,
-        })
-
-    # Proposal applications
-    data["proposal_applications"] = []
-    for application in user.proposal_applications.select_related("proposal"):
-        data["proposal_applications"].append({
-            "id": str(application.id),
-            "proposal_title": application.proposal.title,
-            "motivation": application.motivation,
-            "status": application.status,
-            "created": application.created.isoformat(),
+    # Group invitations sent
+    data["group_invitations_sent"] = []
+    for invitation in user.sent_invitations.select_related("group", "invitee"):
+        data["group_invitations_sent"].append({
+            "id": str(invitation.id),
+            "group_name": invitation.group.name,
+            "invitee_email": invitation.invitee.email,
+            "status": invitation.status,
+            "created": invitation.created.isoformat(),
         })
 
     return data
@@ -193,11 +244,11 @@ def anonymize_user(user: User, deleted_by: User | None = None) -> dict[str, Any]
     This function:
     1. Replaces personal identifiers with anonymous placeholders
     2. Removes the user's avatar
-    3. Removes the user from groups
+    3. Removes the user from Django groups (roles)
     4. Anonymizes messages content (optional - keeps structure for other participants)
-    5. Deactivates the account
-
-    Academic records (projects, proposals) are preserved but with anonymized identifiers.
+    5. Removes from student groups
+    6. Deletes rankings and favorites
+    7. Deactivates the account
 
     Args:
         user: The user to anonymize
@@ -220,7 +271,7 @@ def anonymize_user(user: User, deleted_by: User | None = None) -> dict[str, Any]
     # Anonymize profile
     user.email = f"{anonymized_id}@deleted.studinsight.local"
     user.first_name = "Utilisateur"
-    user.last_name = "Supprimé"
+    user.last_name = "Supprime"
     user.is_active = False
     user.set_unusable_password()
 
@@ -233,14 +284,14 @@ def anonymize_user(user: User, deleted_by: User | None = None) -> dict[str, Any]
     user.save()
     summary["actions"].append("profile_anonymized")
 
-    # Remove from all groups
+    # Remove from all Django groups (roles)
     groups_count = user.groups.count()
     user.groups.clear()
-    summary["actions"].append(f"removed_from_{groups_count}_groups")
+    summary["actions"].append(f"removed_from_{groups_count}_roles")
 
     # Anonymize sent messages (replace content with placeholder)
     messages_count = user.sent_messages.count()
-    user.sent_messages.update(content="[Message supprimé - Compte RGPD]")
+    user.sent_messages.update(content="[Message supprime - Compte RGPD]")
     summary["actions"].append(f"anonymized_{messages_count}_messages")
 
     # Remove from conversations (but keep conversation structure for other participants)
@@ -261,34 +312,74 @@ def anonymize_user(user: User, deleted_by: User | None = None) -> dict[str, Any]
         attachment.delete()
     summary["actions"].append(f"deleted_{attachments_count}_attachments")
 
-    # Anonymize proposals created by user
-    proposals_count = user.created_proposals.count()
-    # Keep proposals but they're now linked to anonymized user
-    summary["actions"].append(f"anonymized_{proposals_count}_created_proposals")
+    # Remove from student groups
+    student_groups_count = user.student_groups.count()
+    for group in user.student_groups.all():
+        # If user is the leader, transfer leadership or delete group
+        if group.leader_id == user.id:
+            other_members = group.members.exclude(id=user.id)
+            if other_members.exists():
+                # Transfer to first other member
+                group.leader = other_members.first()
+                group.save()
+                summary["actions"].append(f"transferred_leadership_group_{group.id}")
+            else:
+                # Delete empty group
+                group.delete()
+                summary["actions"].append(f"deleted_empty_group_{group.id}")
+                continue
+        group.members.remove(user)
+    summary["actions"].append(f"removed_from_{student_groups_count}_student_groups")
 
-    # Delete proposal applications
-    applications_count = user.proposal_applications.count()
-    user.proposal_applications.all().delete()
-    summary["actions"].append(f"deleted_{applications_count}_proposal_applications")
+    # Delete led groups where no other members exist
+    for group in user.led_groups.all():
+        if group.members.count() == 1:
+            group.delete()
 
-    # Projects as student - anonymize but keep academic record
-    projects_student_count = user.projects_as_student.count()
-    # The student FK will now point to an anonymized user
-    summary["actions"].append(f"anonymized_{projects_student_count}_projects_as_student")
+    # Delete TER rankings via groups
+    try:
+        from backend_django.ter.models import TERRanking
+        ter_ranking_count = TERRanking.objects.filter(group__leader=user).count()
+        TERRanking.objects.filter(group__leader=user).delete()
+        summary["actions"].append(f"deleted_{ter_ranking_count}_ter_rankings")
+    except Exception as e:
+        logger.warning(f"Could not delete TER rankings: {e}")
 
-    # Clear referent/supervisor relationships on projects
-    referent_count = user.projects_as_referent.count()
-    user.projects_as_referent.update(referent=None)
-    summary["actions"].append(f"cleared_{referent_count}_referent_relationships")
+    # Delete TER favorites
+    try:
+        from backend_django.ter.models import TERFavorite
+        ter_fav_count = TERFavorite.objects.filter(student=user).count()
+        TERFavorite.objects.filter(student=user).delete()
+        summary["actions"].append(f"deleted_{ter_fav_count}_ter_favorites")
+    except Exception as e:
+        logger.warning(f"Could not delete TER favorites: {e}")
 
-    supervisor_count = user.projects_as_supervisor.count()
-    user.projects_as_supervisor.update(supervisor=None)
-    summary["actions"].append(f"cleared_{supervisor_count}_supervisor_relationships")
+    # Delete Stage rankings
+    try:
+        from backend_django.stages.models import StageRanking
+        stage_ranking_count = StageRanking.objects.filter(student=user).count()
+        StageRanking.objects.filter(student=user).delete()
+        summary["actions"].append(f"deleted_{stage_ranking_count}_stage_rankings")
+    except Exception as e:
+        logger.warning(f"Could not delete Stage rankings: {e}")
 
-    # Clear supervisor relationships on proposals
-    proposal_supervisor_count = user.supervised_proposals.count()
-    user.supervised_proposals.update(supervisor=None)
-    summary["actions"].append(f"cleared_{proposal_supervisor_count}_proposal_supervisor_relationships")
+    # Delete Stage favorites
+    try:
+        from backend_django.stages.models import StageFavorite
+        stage_fav_count = StageFavorite.objects.filter(student=user).count()
+        StageFavorite.objects.filter(student=user).delete()
+        summary["actions"].append(f"deleted_{stage_fav_count}_stage_favorites")
+    except Exception as e:
+        logger.warning(f"Could not delete Stage favorites: {e}")
+
+    # Delete group invitations
+    invitations_received = user.group_invitations.count()
+    user.group_invitations.all().delete()
+    summary["actions"].append(f"deleted_{invitations_received}_invitations_received")
+
+    invitations_sent = user.sent_invitations.count()
+    user.sent_invitations.all().delete()
+    summary["actions"].append(f"deleted_{invitations_sent}_invitations_sent")
 
     # Remove email addresses from allauth
     try:

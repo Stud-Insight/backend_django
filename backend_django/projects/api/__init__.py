@@ -1,19 +1,19 @@
 """
 Project API controllers.
 
-NOTE: TER/Stage periods APIs have been moved to:
-- ter/api/periods.py → /api/ter/periods/
-- stages/api/periods.py → /api/stages/periods/
+Legacy AcademicProjectController and ProposalController have been removed.
+
+Current controllers:
+- AttachmentsController: File uploads/downloads (/api/attachments/)
+
+For Groups API, use: groups/api/ → /api/groups/
+For TER/Stage APIs, use:
+- ter/api/ → /api/ter/
+- stages/api/ → /api/stages/
 """
 
 from backend_django.projects.api.attachments import AttachmentsController
-from backend_django.projects.api.groups import GroupController
-from backend_django.projects.api.projects import AcademicProjectController
-from backend_django.projects.api.proposals import ProposalController
 
 __all__ = [
     "AttachmentsController",
-    "AcademicProjectController",
-    "GroupController",
-    "ProposalController",
 ]

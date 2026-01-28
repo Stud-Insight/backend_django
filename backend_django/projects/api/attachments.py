@@ -1,5 +1,7 @@
 """
-Attachments and academic projects API controller.
+Attachments API controller.
+
+Handles file uploads and downloads to MinIO/S3 storage.
 """
 
 from uuid import UUID
@@ -7,7 +9,6 @@ from uuid import UUID
 import boto3
 from botocore.config import Config
 from django.conf import settings
-from django.db.models import Q
 from django.http import FileResponse
 from django.http import HttpRequest
 from django.http import HttpResponseRedirect
@@ -27,94 +28,14 @@ from backend_django.core.exceptions import NotAuthenticatedError
 from backend_django.core.exceptions import NotOwnerError
 from backend_django.core.exceptions import PermissionDeniedError
 from backend_django.core.roles import is_admin_or_respo
-from backend_django.projects.models import AcademicProject
 from backend_django.projects.models import Attachment
-from backend_django.projects.schemas import AcademicProjectCreateSchema
-from backend_django.projects.schemas import AcademicProjectSchema
 from backend_django.projects.schemas import AttachmentSchema
 from backend_django.projects.schemas import AttachmentUploadResponse
 
 
-@api_controller("/attachments", tags=["Attachments & Projects"], permissions=[IsAuthenticated])
+@api_controller("/attachments", tags=["Attachments"], permissions=[IsAuthenticated])
 class AttachmentsController(BaseAPI):
-    """API endpoints for attachments and academic projects."""
-
-    @http_get(
-        "/projects",
-        response={200: list[AcademicProjectSchema], 401: ErrorSchema},
-        url_name="projects_list",
-    )
-    def list_projects(self, request: HttpRequest):
-        """List academic projects for the current user."""
-        if not request.user.is_authenticated:
-            return NotAuthenticatedError().to_response()
-
-        projects = AcademicProject.objects.filter(
-            Q(student=request.user) | Q(referent=request.user) | Q(supervisor=request.user)
-        ).prefetch_related("files")
-
-        return 200, [
-            AcademicProjectSchema(
-                id=p.id,
-                student_id=p.student_id,
-                referent_id=p.referent_id,
-                supervisor_id=p.supervisor_id,
-                subject=p.subject,
-                project_type=p.project_type,
-                start_date=p.start_date,
-                end_date=p.end_date,
-                created=p.created,
-                modified=p.modified,
-                files=[
-                    AttachmentSchema(
-                        id=f.id,
-                        original_filename=f.original_filename,
-                        content_type=f.content_type,
-                        size=f.size,
-                        created=f.created,
-                    )
-                    for f in p.files.all()
-                ],
-            )
-            for p in projects
-        ]
-
-    @http_post(
-        "/projects",
-        response={201: AcademicProjectSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema},
-        url_name="projects_create",
-    )
-    def create_project(self, request: HttpRequest, data: AcademicProjectCreateSchema):
-        """Create a new academic project. Requires staff permissions."""
-        if not request.user.is_authenticated:
-            return NotAuthenticatedError().to_response()
-
-        if not is_admin_or_respo(request.user):
-            return PermissionDeniedError("Permission staff requise.").to_response()
-
-        project = AcademicProject.objects.create(
-            student_id=data.student_id,
-            referent_id=data.referent_id,
-            supervisor_id=data.supervisor_id,
-            subject=data.subject,
-            project_type=data.project_type,
-            start_date=data.start_date,
-            end_date=data.end_date,
-        )
-
-        return 201, AcademicProjectSchema(
-            id=project.id,
-            student_id=project.student_id,
-            referent_id=project.referent_id,
-            supervisor_id=project.supervisor_id,
-            subject=project.subject,
-            project_type=project.project_type,
-            start_date=project.start_date,
-            end_date=project.end_date,
-            created=project.created,
-            modified=project.modified,
-            files=[],
-        )
+    """API endpoints for file attachments (upload, download, delete)."""
 
     @http_post(
         "/upload",
@@ -256,33 +177,3 @@ class AttachmentsController(BaseAPI):
             )
             for a in attachments
         ]
-
-    @http_post(
-        "/projects/{project_id}/attach/{attachment_id}",
-        response={200: dict, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
-        url_name="projects_attach_file",
-    )
-    def attach_file_to_project(self, request: HttpRequest, project_id: UUID, attachment_id: UUID):
-        """Attach a file to an academic project."""
-        if not request.user.is_authenticated:
-            return NotAuthenticatedError().to_response()
-
-        project = get_object_or_404(AcademicProject, id=project_id)
-        attachment = get_object_or_404(Attachment, id=attachment_id)
-
-        # Check if user has access to the project
-        if not (
-            project.student_id == request.user.id
-            or project.referent_id == request.user.id
-            or project.supervisor_id == request.user.id
-            or is_admin_or_respo(request.user)
-        ):
-            return PermissionDeniedError().to_response()
-
-        # Check if user owns the attachment
-        if attachment.owner_id != request.user.id and not is_admin_or_respo(request.user):
-            return NotOwnerError("Vous n'êtes pas le propriétaire de ce fichier.").to_response()
-
-        project.files.add(attachment)
-
-        return {"success": True, "message": "Fichier associé au projet avec succès."}

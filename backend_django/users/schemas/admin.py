@@ -12,6 +12,25 @@ if TYPE_CHECKING:
     from backend_django.users.models import User
 
 
+class UserMinimalSchema(Schema):
+    """Minimal user schema for embedding in other schemas."""
+
+    id: UUID
+    email: str
+    first_name: str
+    last_name: str
+
+    @staticmethod
+    def from_user(user: "User") -> "UserMinimalSchema":
+        """Create schema from User model."""
+        return UserMinimalSchema(
+            id=user.id,
+            email=user.email,
+            first_name=user.first_name,
+            last_name=user.last_name,
+        )
+
+
 class UserCreateSchema(Schema):
     """Schema for admin creating a user."""
 
