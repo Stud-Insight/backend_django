@@ -7,10 +7,11 @@ from uuid import UUID
 
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
-from ninja_extra import api_controller, http_get, http_post, http_put
+from ninja_extra import api_controller, http_delete, http_get, http_post, http_put
 
 from backend_django.core.api import BaseAPI, IsAuthenticated
 from backend_django.core.exceptions import (
+    AlreadyExistsError,
     BadRequestError,
     ErrorSchema,
     NotAuthenticatedError,
@@ -21,6 +22,7 @@ from backend_django.core.roles import is_ter_admin
 from backend_django.groups.models import Group
 from backend_django.ter.models import PeriodStatus, SubjectStatus, TERPeriod, TERSubject
 from backend_django.ter.schemas.periods import (
+    AddStudentSchema,
     TERPeriodCopySchema,
     TERPeriodCreateSchema,
     TERPeriodDetailSchema,
@@ -28,6 +30,7 @@ from backend_django.ter.schemas.periods import (
     TERPeriodStatsSchema,
     TERPeriodUpdateSchema,
 )
+from backend_django.users.schemas import UserMinimalSchema
 from backend_django.users.models import User
 
 
@@ -426,3 +429,132 @@ class TERPeriodController(BaseAPI):
             subjects_validated=subjects_validated,
             subjects_assigned=subjects_assigned,
         )
+
+    # ==================== Students Management ====================
+
+    @http_get(
+        "/{period_id}/students",
+        response={200: list[UserMinimalSchema], 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="ter_periods_students_list",
+    )
+    def list_students(self, request: HttpRequest, period_id: UUID):
+        """
+        List students enrolled in a TER period.
+
+        Only Respo TER / Admin can view enrolled students.
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        if not is_ter_admin(request.user):
+            return PermissionDeniedError(
+                "Seuls les responsables TER peuvent consulter les étudiants inscrits."
+            ).to_response()
+
+        period = get_object_or_404(TERPeriod, id=period_id)
+        students = period.enrolled_students.order_by("last_name", "first_name")
+
+        return 200, [UserMinimalSchema.from_user(s) for s in students]
+
+    @http_post(
+        "/{period_id}/students",
+        response={201: UserMinimalSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema, 409: ErrorSchema},
+        url_name="ter_periods_students_add",
+    )
+    def add_student(self, request: HttpRequest, period_id: UUID, data: AddStudentSchema):
+        """
+        Add a student to a TER period.
+
+        Only Respo TER / Admin can add students.
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        if not is_ter_admin(request.user):
+            return PermissionDeniedError(
+                "Seuls les responsables TER peuvent ajouter des étudiants."
+            ).to_response()
+
+        period = get_object_or_404(TERPeriod, id=period_id)
+
+        try:
+            student = User.objects.get(id=data.user_id)
+        except User.DoesNotExist:
+            return NotFoundError("Utilisateur introuvable.").to_response()
+
+        if period.enrolled_students.filter(id=student.id).exists():
+            return AlreadyExistsError(
+                "Cet étudiant est déjà inscrit à cette période TER."
+            ).to_response()
+
+        period.enrolled_students.add(student)
+
+        return 201, UserMinimalSchema.from_user(student)
+
+    @http_delete(
+        "/{period_id}/students/{user_id}",
+        response={204: None, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="ter_periods_students_remove",
+    )
+    def remove_student(self, request: HttpRequest, period_id: UUID, user_id: UUID):
+        """
+        Remove a student from a TER period.
+
+        Only Respo TER / Admin can remove students.
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        if not is_ter_admin(request.user):
+            return PermissionDeniedError(
+                "Seuls les responsables TER peuvent retirer des étudiants."
+            ).to_response()
+
+        period = get_object_or_404(TERPeriod, id=period_id)
+
+        if not period.enrolled_students.filter(id=user_id).exists():
+            return NotFoundError(
+                "Cet étudiant n'est pas inscrit à cette période TER."
+            ).to_response()
+
+        period.enrolled_students.remove(user_id)
+
+        return 204, None
+
+    # ==================== Encadrants ====================
+
+    @http_get(
+        "/{period_id}/encadrants",
+        response={200: list[UserMinimalSchema], 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="ter_periods_encadrants_list",
+    )
+    def list_encadrants(self, request: HttpRequest, period_id: UUID):
+        """
+        List encadrants for a TER period.
+
+        Returns all professors and supervisors who have subjects
+        in this period (derived from TERSubject.professor and TERSubject.supervisor).
+
+        Only Respo TER / Admin can view encadrants.
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        if not is_ter_admin(request.user):
+            return PermissionDeniedError(
+                "Seuls les responsables TER peuvent consulter les encadrants."
+            ).to_response()
+
+        period = get_object_or_404(TERPeriod, id=period_id)
+
+        subjects = TERSubject.objects.filter(ter_period=period)
+
+        professor_ids = subjects.values_list("professor_id", flat=True)
+        supervisor_ids = subjects.exclude(supervisor__isnull=True).values_list("supervisor_id", flat=True)
+
+        all_ids = set(professor_ids) | set(supervisor_ids)
+        all_ids.discard(None)
+
+        encadrants = User.objects.filter(id__in=all_ids).order_by("last_name", "first_name")
+
+        return 200, [UserMinimalSchema.from_user(u) for u in encadrants]

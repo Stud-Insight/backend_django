@@ -205,3 +205,9 @@ class TERPeriodStatsSchema(Schema):
     subjects_total: int  # All subjects for period
     subjects_validated: int  # Validated subjects available
     subjects_assigned: int  # Total assignments (groups with subjects)
+
+
+class AddStudentSchema(Schema):
+    """Schema for adding a student to a TER period."""
+
+    user_id: UUID

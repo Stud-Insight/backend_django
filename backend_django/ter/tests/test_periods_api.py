@@ -9,7 +9,7 @@ from django.contrib.auth.models import Group
 from django.test import Client
 
 from backend_django.core.roles import Role
-from backend_django.ter.models import PeriodStatus, TERPeriod
+from backend_django.ter.models import PeriodStatus, TERPeriod, TERSubject
 from backend_django.users.tests.factories import UserFactory
 
 
@@ -299,3 +299,284 @@ class TestListPeriodsEndpoint:
         data = response.json()
         assert len(data) == 1
         assert data[0]["status"] == "draft"
+
+
+@pytest.fixture
+def encadrant_user(db):
+    """Create an encadrant user."""
+    user = UserFactory(
+        email="encadrant@test.com",
+        first_name="Prof",
+        last_name="Encadrant",
+        is_active=True,
+    )
+    user.set_password("testpass123")
+    user.save()
+    encadrant_group, _ = Group.objects.get_or_create(name=Role.ENCADRANT.value)
+    user.groups.add(encadrant_group)
+    return user
+
+
+def _get_csrf(client):
+    """Get CSRF token from client."""
+    resp = client.get("/api/auth/csrf")
+    return resp.json()["csrf_token"]
+
+
+@pytest.mark.django_db
+class TestStudentsEndpoints:
+    """Tests for GET/POST/DELETE /api/ter/periods/{id}/students."""
+
+    def test_list_students_as_staff(self, staff_client, staff_user, student_user, ter_period_open):
+        """Staff can list enrolled students."""
+        ter_period_open.enrolled_students.add(student_user)
+
+        response = staff_client.get(f"/api/ter/periods/{ter_period_open.id}/students")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["email"] == student_user.email
+        assert data[0]["first_name"] == student_user.first_name
+
+    def test_list_students_empty(self, staff_client, ter_period_open):
+        """Staff gets empty list when no students enrolled."""
+        response = staff_client.get(f"/api/ter/periods/{ter_period_open.id}/students")
+
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_list_students_forbidden_for_student(self, authenticated_client, ter_period_open):
+        """Non-staff users cannot list enrolled students."""
+        response = authenticated_client.get(f"/api/ter/periods/{ter_period_open.id}/students")
+
+        assert response.status_code == 403
+
+    def test_add_student(self, staff_client, staff_user, student_user, ter_period_open):
+        """Staff can add a student to a period."""
+        csrf = _get_csrf(staff_client)
+
+        response = staff_client.post(
+            f"/api/ter/periods/{ter_period_open.id}/students",
+            data={"user_id": str(student_user.id)},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf,
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["email"] == student_user.email
+
+        # Verify student is now enrolled
+        assert ter_period_open.enrolled_students.filter(id=student_user.id).exists()
+
+    def test_add_student_already_enrolled(self, staff_client, staff_user, student_user, ter_period_open):
+        """Adding an already enrolled student returns 409."""
+        ter_period_open.enrolled_students.add(student_user)
+        csrf = _get_csrf(staff_client)
+
+        response = staff_client.post(
+            f"/api/ter/periods/{ter_period_open.id}/students",
+            data={"user_id": str(student_user.id)},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf,
+        )
+
+        assert response.status_code == 409
+
+    def test_add_student_not_found(self, staff_client, staff_user, ter_period_open):
+        """Adding a non-existent user returns 404."""
+        import uuid
+        csrf = _get_csrf(staff_client)
+
+        response = staff_client.post(
+            f"/api/ter/periods/{ter_period_open.id}/students",
+            data={"user_id": str(uuid.uuid4())},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf,
+        )
+
+        assert response.status_code == 404
+
+    def test_add_student_forbidden_for_student(self, authenticated_client, student_user, ter_period_open):
+        """Non-staff users cannot add students."""
+        csrf = _get_csrf(authenticated_client)
+
+        response = authenticated_client.post(
+            f"/api/ter/periods/{ter_period_open.id}/students",
+            data={"user_id": str(student_user.id)},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf,
+        )
+
+        assert response.status_code == 403
+
+    def test_remove_student(self, staff_client, staff_user, student_user, ter_period_open):
+        """Staff can remove a student from a period."""
+        ter_period_open.enrolled_students.add(student_user)
+        csrf = _get_csrf(staff_client)
+
+        response = staff_client.delete(
+            f"/api/ter/periods/{ter_period_open.id}/students/{student_user.id}",
+            HTTP_X_CSRFTOKEN=csrf,
+        )
+
+        assert response.status_code == 204
+
+        # Verify student is no longer enrolled
+        assert not ter_period_open.enrolled_students.filter(id=student_user.id).exists()
+
+    def test_remove_student_not_enrolled(self, staff_client, staff_user, student_user, ter_period_open):
+        """Removing a non-enrolled student returns 404."""
+        csrf = _get_csrf(staff_client)
+
+        response = staff_client.delete(
+            f"/api/ter/periods/{ter_period_open.id}/students/{student_user.id}",
+            HTTP_X_CSRFTOKEN=csrf,
+        )
+
+        assert response.status_code == 404
+
+    def test_remove_student_forbidden_for_student(self, authenticated_client, student_user, ter_period_open):
+        """Non-staff users cannot remove students."""
+        ter_period_open.enrolled_students.add(student_user)
+        csrf = _get_csrf(authenticated_client)
+
+        response = authenticated_client.delete(
+            f"/api/ter/periods/{ter_period_open.id}/students/{student_user.id}",
+            HTTP_X_CSRFTOKEN=csrf,
+        )
+
+        assert response.status_code == 403
+
+    def test_add_then_list_students(self, staff_client, staff_user, student_user, another_student, ter_period_open):
+        """Full flow: add two students, list them, remove one."""
+        csrf = _get_csrf(staff_client)
+
+        # Add two students
+        staff_client.post(
+            f"/api/ter/periods/{ter_period_open.id}/students",
+            data={"user_id": str(student_user.id)},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf,
+        )
+        staff_client.post(
+            f"/api/ter/periods/{ter_period_open.id}/students",
+            data={"user_id": str(another_student.id)},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf,
+        )
+
+        # List - should have 2
+        response = staff_client.get(f"/api/ter/periods/{ter_period_open.id}/students")
+        assert response.status_code == 200
+        assert len(response.json()) == 2
+
+        # Remove one
+        staff_client.delete(
+            f"/api/ter/periods/{ter_period_open.id}/students/{student_user.id}",
+            HTTP_X_CSRFTOKEN=csrf,
+        )
+
+        # List - should have 1
+        response = staff_client.get(f"/api/ter/periods/{ter_period_open.id}/students")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["email"] == another_student.email
+
+
+@pytest.mark.django_db
+class TestEncadrantsEndpoint:
+    """Tests for GET /api/ter/periods/{id}/encadrants."""
+
+    def test_list_encadrants_with_subjects(
+        self, staff_client, staff_user, encadrant_user, ter_period_open
+    ):
+        """Staff can list encadrants derived from subjects."""
+        # Create a subject with professor
+        TERSubject.objects.create(
+            ter_period=ter_period_open,
+            title="Sujet IA",
+            description="Description",
+            domain="IA/ML",
+            professor=encadrant_user,
+            status="validated",
+        )
+
+        response = staff_client.get(f"/api/ter/periods/{ter_period_open.id}/encadrants")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["email"] == encadrant_user.email
+
+    def test_list_encadrants_professor_and_supervisor(
+        self, staff_client, staff_user, encadrant_user, ter_period_open
+    ):
+        """Both professor and supervisor are listed as encadrants."""
+        supervisor = UserFactory(
+            email="supervisor@test.com",
+            first_name="Super",
+            last_name="Visor",
+            is_active=True,
+        )
+
+        TERSubject.objects.create(
+            ter_period=ter_period_open,
+            title="Sujet Securite",
+            description="Description",
+            domain="Sécurité",
+            professor=encadrant_user,
+            supervisor=supervisor,
+            status="validated",
+        )
+
+        response = staff_client.get(f"/api/ter/periods/{ter_period_open.id}/encadrants")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+        emails = {d["email"] for d in data}
+        assert encadrant_user.email in emails
+        assert supervisor.email in emails
+
+    def test_list_encadrants_no_duplicates(
+        self, staff_client, staff_user, encadrant_user, ter_period_open
+    ):
+        """Same encadrant on multiple subjects appears only once."""
+        TERSubject.objects.create(
+            ter_period=ter_period_open,
+            title="Sujet 1",
+            description="Desc",
+            domain="IA/ML",
+            professor=encadrant_user,
+            status="validated",
+        )
+        TERSubject.objects.create(
+            ter_period=ter_period_open,
+            title="Sujet 2",
+            description="Desc",
+            domain="Web",
+            professor=encadrant_user,
+            status="validated",
+        )
+
+        response = staff_client.get(f"/api/ter/periods/{ter_period_open.id}/encadrants")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+
+    def test_list_encadrants_empty(self, staff_client, ter_period_open):
+        """No subjects means no encadrants."""
+        response = staff_client.get(f"/api/ter/periods/{ter_period_open.id}/encadrants")
+
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_list_encadrants_forbidden_for_student(self, authenticated_client, ter_period_open):
+        """Non-staff users cannot list encadrants."""
+        response = authenticated_client.get(f"/api/ter/periods/{ter_period_open.id}/encadrants")
+
+        assert response.status_code == 403
