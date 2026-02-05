@@ -21,6 +21,7 @@ from backend_django.core.exceptions import (
     PermissionDeniedError,
 )
 from backend_django.core.roles import is_ter_admin
+from backend_django.core.schemas import PaginatedResponseSchema, paginate_queryset
 from backend_django.groups.models import Group, GroupInvitation, GroupStatus, InvitationStatus
 from backend_django.groups.schemas.groups import (
     DashboardStatsSchema,
@@ -122,7 +123,7 @@ class GroupController(BaseAPI):
 
     @http_get(
         "/",
-        response={200: list[GroupListSchema], 401: ErrorSchema},
+        response={200: PaginatedResponseSchema, 401: ErrorSchema},
         url_name="groups_list",
     )
     def list_groups(
@@ -131,8 +132,10 @@ class GroupController(BaseAPI):
         ter_period_id: UUID | None = None,
         stage_period_id: UUID | None = None,
         status: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
     ):
-        """List groups with optional filtering."""
+        """List groups with optional filtering (paginated)."""
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
@@ -147,7 +150,12 @@ class GroupController(BaseAPI):
 
         groups = groups.order_by("-created")
 
-        return 200, [group_to_list_schema(g) for g in groups]
+        items, count, pg, ps = paginate_queryset(groups, page, page_size)
+
+        return 200, PaginatedResponseSchema(
+            count=count, page=pg, page_size=ps,
+            results=[group_to_list_schema(g) for g in items],
+        )
 
     @http_get(
         "/my",

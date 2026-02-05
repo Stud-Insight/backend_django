@@ -6,6 +6,7 @@ Contains:
 - TERSubject: Subject proposals for TER (replaces Proposal for TER)
 - TERRanking: Group rankings of subjects
 - TERFavorite: Individual student favorites
+- BalancingOperation: Audit log for group balancing operations
 """
 
 import logging
@@ -206,6 +207,19 @@ class TERSubject(BaseModel):
         help_text=_("Number of groups that can work on this subject"),
     )
 
+    min_group_size = models.PositiveSmallIntegerField(
+        _("minimum group size"),
+        null=True,
+        blank=True,
+        help_text=_("Minimum group size for this subject. Must be >= period min_group_size."),
+    )
+    max_group_size = models.PositiveSmallIntegerField(
+        _("maximum group size"),
+        null=True,
+        blank=True,
+        help_text=_("Maximum group size for this subject. Must be <= period max_group_size."),
+    )
+
     status = FSMField(
         _("status"),
         default=SubjectStatus.DRAFT,
@@ -224,6 +238,30 @@ class TERSubject(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.title} ({self.ter_period.name})"
+
+    def clean(self):
+        """Validate that subject group size bounds are within period bounds."""
+        from django.core.exceptions import ValidationError
+
+        errors = {}
+        period = self.ter_period
+
+        if self.min_group_size is not None:
+            if self.min_group_size < period.min_group_size:
+                errors["min_group_size"] = (
+                    f"Ne peut pas être inférieur à la valeur de la période ({period.min_group_size})."
+                )
+            if self.max_group_size is not None and self.min_group_size > self.max_group_size:
+                errors["min_group_size"] = "Ne peut pas être supérieur à max_group_size."
+
+        if self.max_group_size is not None:
+            if self.max_group_size > period.max_group_size:
+                errors["max_group_size"] = (
+                    f"Ne peut pas être supérieur à la valeur de la période ({period.max_group_size})."
+                )
+
+        if errors:
+            raise ValidationError(errors)
 
     def can_be_managed_by(self, user) -> bool:
         """Check if user can manage this subject (edit, delete)."""
@@ -310,3 +348,79 @@ class TERFavorite(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.student.email} - {self.subject.title}"
+
+
+class BalancingOperationType(models.TextChoices):
+    """Types of balancing operations."""
+
+    STUDENT_TO_GROUP = "student_to_group", _("Etudiant vers groupe")
+    MERGE_GROUPS = "merge_groups", _("Fusion de groupes")
+    FORCE_FORM = "force_form", _("Formation forcee")
+    FORCE_ASSIGN = "force_assign", _("Affectation forcee")
+    REVERT_ASSIGNMENT = "revert_assignment", _("Annulation d'affectation")
+    MOVE_STUDENT = "move_student", _("Deplacement d'etudiant")
+
+
+class BalancingOperation(BaseModel):
+    """
+    Audit log for group balancing operations.
+
+    Records all manual and automatic balancing operations performed
+    by Respo TER or the balancing algorithm. Provides full traceability
+    for group management actions.
+    """
+
+    ter_period = models.ForeignKey(
+        TERPeriod,
+        on_delete=models.CASCADE,
+        related_name="balancing_operations",
+        verbose_name=_("TER period"),
+    )
+
+    operation_type = models.CharField(
+        _("operation type"),
+        max_length=30,
+        choices=BalancingOperationType.choices,
+    )
+
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="balancing_operations",
+        verbose_name=_("performed by"),
+        help_text=_("User who performed the operation (null for automatic)"),
+    )
+
+    details = models.JSONField(
+        _("details"),
+        default=dict,
+        help_text=_(
+            "Operation details: student_id, source_group_id, target_group_id, "
+            "similarity_score, etc."
+        ),
+    )
+
+    is_automatic = models.BooleanField(
+        _("automatic"),
+        default=False,
+        help_text=_("True if performed by the balancing algorithm"),
+    )
+
+    reason = models.TextField(
+        _("reason"),
+        blank=True,
+        help_text=_("Explanation for the operation"),
+    )
+
+    class Meta:
+        verbose_name = _("balancing operation")
+        verbose_name_plural = _("balancing operations")
+        ordering = ["-created"]
+
+    def __str__(self) -> str:
+        performer = "Automatique" if self.is_automatic else (
+            self.performed_by.email if self.performed_by else "Inconnu"
+        )
+        return f"{self.get_operation_type_display()} - {self.ter_period.name} ({performer})"

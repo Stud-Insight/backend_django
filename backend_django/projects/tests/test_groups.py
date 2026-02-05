@@ -32,7 +32,7 @@ def ter_period(db):
         assignment_date=today + timedelta(days=61),
         project_start=today + timedelta(days=70),
         project_end=today + timedelta(days=180),
-        min_group_size=1,
+        min_group_size=2,
         max_group_size=4,
     )
 
@@ -78,7 +78,7 @@ class TestTERPeriod:
         assert ter_period.name == "TER 2024-2025 S1"
         assert ter_period.academic_year == "2024-2025"
         assert ter_period.status == PeriodStatus.OPEN
-        assert ter_period.min_group_size == 1
+        assert ter_period.min_group_size == 2
         assert ter_period.max_group_size == 4
 
     def test_str_representation(self, ter_period):

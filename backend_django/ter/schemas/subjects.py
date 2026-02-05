@@ -22,6 +22,8 @@ class TERSubjectListSchema(Schema):
     professor: UserMinimalSchema | None
     status: str
     max_groups: int
+    min_group_size: int | None
+    max_group_size: int | None
     ter_period_id: UUID
     created: str
 
@@ -37,6 +39,8 @@ class TERSubjectDetailSchema(Schema):
     professor: UserMinimalSchema | None
     supervisor: UserMinimalSchema | None
     max_groups: int
+    min_group_size: int | None
+    max_group_size: int | None
     status: str
     rejection_reason: str
     ter_period_id: UUID
@@ -55,6 +59,8 @@ class TERSubjectCreateSchema(Schema):
     prerequisites: str = ""
     supervisor_id: UUID | None = None
     max_groups: int = 1
+    min_group_size: int | None = None
+    max_group_size: int | None = None
 
     @field_validator("title")
     @classmethod
@@ -100,6 +106,8 @@ class TERSubjectUpdateSchema(Schema):
     prerequisites: str | None = None
     supervisor_id: UUID | None = None
     max_groups: int | None = None
+    min_group_size: int | None = None
+    max_group_size: int | None = None
 
     @field_validator("title")
     @classmethod

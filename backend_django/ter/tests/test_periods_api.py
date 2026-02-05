@@ -335,16 +335,18 @@ class TestStudentsEndpoints:
 
         assert response.status_code == 200
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["email"] == student_user.email
-        assert data[0]["first_name"] == student_user.first_name
+        assert data["count"] == 1
+        assert data["results"][0]["email"] == student_user.email
+        assert data["results"][0]["first_name"] == student_user.first_name
 
     def test_list_students_empty(self, staff_client, ter_period_open):
         """Staff gets empty list when no students enrolled."""
         response = staff_client.get(f"/api/ter/periods/{ter_period_open.id}/students")
 
         assert response.status_code == 200
-        assert response.json() == []
+        data = response.json()
+        assert data["count"] == 0
+        assert data["results"] == []
 
     def test_list_students_forbidden_for_student(self, authenticated_client, ter_period_open):
         """Non-staff users cannot list enrolled students."""
@@ -470,7 +472,7 @@ class TestStudentsEndpoints:
         # List - should have 2
         response = staff_client.get(f"/api/ter/periods/{ter_period_open.id}/students")
         assert response.status_code == 200
-        assert len(response.json()) == 2
+        assert response.json()["count"] == 2
 
         # Remove one
         staff_client.delete(
@@ -482,8 +484,8 @@ class TestStudentsEndpoints:
         response = staff_client.get(f"/api/ter/periods/{ter_period_open.id}/students")
         assert response.status_code == 200
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["email"] == another_student.email
+        assert data["count"] == 1
+        assert data["results"][0]["email"] == another_student.email
 
 
 @pytest.mark.django_db
@@ -508,8 +510,8 @@ class TestEncadrantsEndpoint:
 
         assert response.status_code == 200
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["email"] == encadrant_user.email
+        assert data["count"] == 1
+        assert data["results"][0]["email"] == encadrant_user.email
 
     def test_list_encadrants_professor_and_supervisor(
         self, staff_client, staff_user, encadrant_user, ter_period_open
@@ -536,8 +538,8 @@ class TestEncadrantsEndpoint:
 
         assert response.status_code == 200
         data = response.json()
-        assert len(data) == 2
-        emails = {d["email"] for d in data}
+        assert data["count"] == 2
+        emails = {d["email"] for d in data["results"]}
         assert encadrant_user.email in emails
         assert supervisor.email in emails
 
@@ -566,14 +568,16 @@ class TestEncadrantsEndpoint:
 
         assert response.status_code == 200
         data = response.json()
-        assert len(data) == 1
+        assert data["count"] == 1
 
     def test_list_encadrants_empty(self, staff_client, ter_period_open):
         """No subjects means no encadrants."""
         response = staff_client.get(f"/api/ter/periods/{ter_period_open.id}/encadrants")
 
         assert response.status_code == 200
-        assert response.json() == []
+        data = response.json()
+        assert data["count"] == 0
+        assert data["results"] == []
 
     def test_list_encadrants_forbidden_for_student(self, authenticated_client, ter_period_open):
         """Non-staff users cannot list encadrants."""

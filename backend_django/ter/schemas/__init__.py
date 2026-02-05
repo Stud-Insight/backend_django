@@ -1,5 +1,18 @@
 """TER schemas for API requests and responses."""
 
+from .balancing import (
+    BalanceGroupsRequestSchema,
+    BalanceGroupsResponseSchema,
+    BalancingOperationListSchema,
+    BalancingOperationSchema,
+    BalancingPreviewSchema,
+    ForceAssignRequestSchema,
+    ForceFormRequestSchema,
+    MergeGroupsRequestSchema,
+    MergeOperationSchema,
+    MoveStudentRequestSchema,
+    RevertAssignmentRequestSchema,
+)
 from .periods import (
     TERPeriodCopySchema,
     TERPeriodCreateSchema,
@@ -40,4 +53,16 @@ __all__ = [
     "TERRankingItemSchema",
     "TERRankingListSchema",
     "TERRankingCreateSchema",
+    # Balancing
+    "MergeOperationSchema",
+    "BalancingPreviewSchema",
+    "BalanceGroupsRequestSchema",
+    "BalanceGroupsResponseSchema",
+    "MoveStudentRequestSchema",
+    "MergeGroupsRequestSchema",
+    "ForceAssignRequestSchema",
+    "ForceFormRequestSchema",
+    "RevertAssignmentRequestSchema",
+    "BalancingOperationSchema",
+    "BalancingOperationListSchema",
 ]

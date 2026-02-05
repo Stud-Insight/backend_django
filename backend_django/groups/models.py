@@ -136,10 +136,40 @@ class Group(BaseModel):
         return f"{self.name} ({self.get_status_display()})"
 
     def save(self, *args, **kwargs):
-        """Ensure leader is always in members."""
+        """Ensure leader is always in members and auto-form if min_group_size reached."""
         super().save(*args, **kwargs)
         if self.leader and not self.members.filter(id=self.leader_id).exists():
             self.members.add(self.leader)
+            # Check if we should auto-form after adding leader
+            self.check_and_auto_form()
+
+    def check_and_auto_form(self):
+        """
+        Auto-transition to 'formé' if group meets min_group_size requirement.
+
+        Called after:
+        - Group creation (leader added)
+        - Invitation acceptance (new member added)
+
+        Only applies to TER groups (Stage groups don't have min_group_size).
+        """
+        if self.status != GroupStatus.OUVERT:
+            return
+
+        # Only TER periods have min_group_size
+        period = self.ter_period
+        if not period:
+            return
+
+        if self.member_count >= period.min_group_size:
+            self.form_group()
+            self.save(update_fields=["status"])
+            logger.info(
+                "AUTO-TRANSITION: Group '%s' formed (has %d members, min_group_size=%d)",
+                self.name,
+                self.member_count,
+                period.min_group_size,
+            )
 
     # FSM Transitions
 
@@ -175,6 +205,107 @@ class Group(BaseModel):
         - Only possible before subject assignment
         """
         pass
+
+    # Admin override methods
+
+    def force_form(self):
+        """
+        Force transition to 'forme' status regardless of current state.
+
+        Admin-only operation that bypasses normal FSM transitions.
+        Use with caution - should only be called by Respo TER.
+        """
+        if self.status == GroupStatus.CLOTURE:
+            raise ValueError("Cannot force form a closed group with assigned subject")
+
+        old_status = self.status
+        # Bypass FSM protection by using update() directly
+        Group.objects.filter(pk=self.pk).update(status=GroupStatus.FORME)
+        # Manually update the in-memory state without triggering FSM setter
+        # Access the internal state directly
+        self.__dict__["status"] = GroupStatus.FORME
+
+        logger.info(
+            "ADMIN-OVERRIDE: Group '%s' force-formed (was %s)",
+            self.name,
+            old_status,
+        )
+
+    def force_reopen(self):
+        """
+        Force transition to 'ouvert' status regardless of current state.
+
+        Admin-only operation that bypasses normal FSM transitions.
+        Clears assigned_subject if present.
+        Use with caution - should only be called by Respo TER.
+        """
+        old_status = self.status
+        old_subject = self.assigned_subject
+
+        # Bypass FSM protection by using update() directly
+        Group.objects.filter(pk=self.pk).update(
+            status=GroupStatus.OUVERT,
+            assigned_subject=None,
+        )
+        # Manually update the in-memory state without triggering FSM setter
+        self.__dict__["status"] = GroupStatus.OUVERT
+        self.assigned_subject = None
+        self.assigned_subject_id = None
+
+        logger.info(
+            "ADMIN-OVERRIDE: Group '%s' force-reopened (was %s, had subject: %s)",
+            self.name,
+            old_status,
+            old_subject.title if old_subject else None,
+        )
+
+    def admin_add_member(self, user):
+        """
+        Admin-only: Add a member to the group bypassing status checks.
+
+        Args:
+            user: User instance to add
+
+        Raises:
+            ValueError: If max_group_size would be exceeded
+        """
+        if self.ter_period and self.ter_period.max_group_size:
+            if self.member_count >= self.ter_period.max_group_size:
+                raise ValueError(
+                    f"Cannot add member: group already at max size ({self.ter_period.max_group_size})"
+                )
+
+        self.members.add(user)
+        logger.info(
+            "ADMIN-OVERRIDE: Added member %s to group '%s'",
+            user.email,
+            self.name,
+        )
+
+    def admin_remove_member(self, user):
+        """
+        Admin-only: Remove a member from the group bypassing status checks.
+
+        Cannot remove the leader.
+
+        Args:
+            user: User instance to remove
+
+        Raises:
+            ValueError: If user is the leader
+        """
+        if user.id == self.leader_id:
+            raise ValueError("Cannot remove the group leader")
+
+        if not self.members.filter(id=user.id).exists():
+            raise ValueError("User is not a member of this group")
+
+        self.members.remove(user)
+        logger.info(
+            "ADMIN-OVERRIDE: Removed member %s from group '%s'",
+            user.email,
+            self.name,
+        )
 
     # Helper methods
 
@@ -336,15 +467,8 @@ class GroupInvitation(BaseModel):
             # Add to group members
             group.members.add(self.invitee)
 
-            # Auto-transition: ouvert -> forme when 2nd member joins
-            if group.status == GroupStatus.OUVERT and group.member_count >= 2:
-                group.form_group()
-                group.save()
-                logger.info(
-                    "AUTO-TRANSITION: Group '%s' formed (now has %d members)",
-                    group.name,
-                    group.member_count,
-                )
+            # Auto-transition if min_group_size reached
+            group.check_and_auto_form()
 
         # Auto-decline other pending invitations for the same period
         self._auto_decline_other_invitations()

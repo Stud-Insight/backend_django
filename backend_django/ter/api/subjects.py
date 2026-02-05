@@ -17,6 +17,7 @@ from backend_django.core.exceptions import (
     NotFoundError,
     PermissionDeniedError,
 )
+from backend_django.core.schemas import PaginatedResponseSchema, paginate_queryset
 from backend_django.core.roles import is_ter_admin, Role, user_has_role
 from backend_django.ter.models import PeriodStatus, SubjectStatus, TERFavorite, TERPeriod, TERSubject
 from backend_django.ter.schemas.subjects import (
@@ -55,6 +56,8 @@ def subject_to_list_schema(subject: TERSubject) -> TERSubjectListSchema:
         professor=user_to_minimal_schema(subject.professor),
         status=subject.status,
         max_groups=subject.max_groups,
+        min_group_size=subject.min_group_size,
+        max_group_size=subject.max_group_size,
         ter_period_id=subject.ter_period_id,
         created=str(subject.created),
     )
@@ -71,6 +74,8 @@ def subject_to_detail_schema(subject: TERSubject, is_favorite: bool = False) -> 
         professor=user_to_minimal_schema(subject.professor),
         supervisor=user_to_minimal_schema(subject.supervisor),
         max_groups=subject.max_groups,
+        min_group_size=subject.min_group_size,
+        max_group_size=subject.max_group_size,
         status=subject.status,
         rejection_reason=subject.rejection_reason,
         ter_period_id=subject.ter_period_id,
@@ -89,7 +94,7 @@ class TERSubjectController(BaseAPI):
 
     @http_get(
         "/",
-        response={200: list[TERSubjectListSchema], 401: ErrorSchema},
+        response={200: PaginatedResponseSchema, 401: ErrorSchema},
         url_name="ter_subjects_list",
     )
     def list_subjects(
@@ -98,9 +103,11 @@ class TERSubjectController(BaseAPI):
         ter_period_id: UUID | None = None,
         status: str | None = None,
         domain: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
     ):
         """
-        List TER subjects.
+        List TER subjects (paginated).
 
         Optional filters:
         - ter_period_id: Filter by TER period
@@ -129,7 +136,48 @@ class TERSubjectController(BaseAPI):
 
         subjects = subjects.order_by("-created")
 
-        return 200, [subject_to_list_schema(s) for s in subjects]
+        items, count, pg, ps = paginate_queryset(subjects, page, page_size)
+
+        return 200, PaginatedResponseSchema(
+            count=count, page=pg, page_size=ps,
+            results=[subject_to_list_schema(s) for s in items],
+        )
+
+    @http_get(
+        "/me",
+        response={200: PaginatedResponseSchema, 401: ErrorSchema},
+        url_name="ter_subjects_me",
+    )
+    def my_subjects(
+        self,
+        request: HttpRequest,
+        ter_period_id: UUID | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ):
+        """
+        List subjects where the current user is professor or supervisor (paginated).
+
+        Optional filter: ter_period_id
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        subjects = TERSubject.objects.select_related("professor", "ter_period").filter(
+            models.Q(professor=request.user) | models.Q(supervisor=request.user)
+        )
+
+        if ter_period_id:
+            subjects = subjects.filter(ter_period_id=ter_period_id)
+
+        subjects = subjects.order_by("-created")
+
+        items, count, pg, ps = paginate_queryset(subjects, page, page_size)
+
+        return 200, PaginatedResponseSchema(
+            count=count, page=pg, page_size=ps,
+            results=[subject_to_list_schema(s) for s in items],
+        )
 
     @http_get(
         "/{subject_id}",
@@ -192,6 +240,23 @@ class TERSubjectController(BaseAPI):
         if data.supervisor_id:
             supervisor = get_object_or_404(User, id=data.supervisor_id)
 
+        # Validate group size bounds against period
+        if data.min_group_size is not None:
+            if data.min_group_size < ter_period.min_group_size:
+                return BadRequestError(
+                    f"min_group_size ne peut pas être inférieur à celui de la période ({ter_period.min_group_size})."
+                ).to_response()
+            if data.max_group_size is not None and data.min_group_size > data.max_group_size:
+                return BadRequestError(
+                    "min_group_size ne peut pas être supérieur à max_group_size."
+                ).to_response()
+
+        if data.max_group_size is not None:
+            if data.max_group_size > ter_period.max_group_size:
+                return BadRequestError(
+                    f"max_group_size ne peut pas être supérieur à celui de la période ({ter_period.max_group_size})."
+                ).to_response()
+
         subject = TERSubject.objects.create(
             ter_period=ter_period,
             title=data.title,
@@ -201,6 +266,8 @@ class TERSubjectController(BaseAPI):
             professor=request.user,
             supervisor=supervisor,
             max_groups=data.max_groups,
+            min_group_size=data.min_group_size,
+            max_group_size=data.max_group_size,
             status=SubjectStatus.DRAFT,
         )
 
@@ -247,6 +314,28 @@ class TERSubjectController(BaseAPI):
             subject.supervisor = get_object_or_404(User, id=data.supervisor_id)
         if data.max_groups is not None:
             subject.max_groups = data.max_groups
+
+        if data.min_group_size is not None:
+            if data.min_group_size < subject.ter_period.min_group_size:
+                return BadRequestError(
+                    f"min_group_size ne peut pas être inférieur à celui de la période ({subject.ter_period.min_group_size})."
+                ).to_response()
+            subject.min_group_size = data.min_group_size
+
+        if data.max_group_size is not None:
+            if data.max_group_size > subject.ter_period.max_group_size:
+                return BadRequestError(
+                    f"max_group_size ne peut pas être supérieur à celui de la période ({subject.ter_period.max_group_size})."
+                ).to_response()
+            subject.max_group_size = data.max_group_size
+
+        # Cross-validate min/max after both potentially updated
+        effective_min = subject.min_group_size
+        effective_max = subject.max_group_size
+        if effective_min is not None and effective_max is not None and effective_min > effective_max:
+            return BadRequestError(
+                "min_group_size ne peut pas être supérieur à max_group_size."
+            ).to_response()
 
         # Reset to draft if was rejected
         if subject.status == SubjectStatus.REJECTED:

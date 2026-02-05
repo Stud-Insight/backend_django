@@ -19,6 +19,7 @@ from backend_django.core.exceptions import (
     PermissionDeniedError,
 )
 from backend_django.core.roles import is_ter_admin
+from backend_django.core.schemas import PaginatedResponseSchema, paginate_queryset
 from backend_django.groups.models import Group
 from backend_django.ter.models import PeriodStatus, SubjectStatus, TERPeriod, TERSubject
 from backend_django.ter.schemas.periods import (
@@ -434,12 +435,12 @@ class TERPeriodController(BaseAPI):
 
     @http_get(
         "/{period_id}/students",
-        response={200: list[UserMinimalSchema], 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        response={200: PaginatedResponseSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
         url_name="ter_periods_students_list",
     )
-    def list_students(self, request: HttpRequest, period_id: UUID):
+    def list_students(self, request: HttpRequest, period_id: UUID, page: int = 1, page_size: int = 20):
         """
-        List students enrolled in a TER period.
+        List students enrolled in a TER period (paginated).
 
         Only Respo TER / Admin can view enrolled students.
         """
@@ -454,7 +455,12 @@ class TERPeriodController(BaseAPI):
         period = get_object_or_404(TERPeriod, id=period_id)
         students = period.enrolled_students.order_by("last_name", "first_name")
 
-        return 200, [UserMinimalSchema.from_user(s) for s in students]
+        items, count, pg, ps = paginate_queryset(students, page, page_size)
+
+        return 200, PaginatedResponseSchema(
+            count=count, page=pg, page_size=ps,
+            results=[UserMinimalSchema.from_user(s) for s in items],
+        )
 
     @http_post(
         "/{period_id}/students",
@@ -525,12 +531,12 @@ class TERPeriodController(BaseAPI):
 
     @http_get(
         "/{period_id}/encadrants",
-        response={200: list[UserMinimalSchema], 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        response={200: PaginatedResponseSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
         url_name="ter_periods_encadrants_list",
     )
-    def list_encadrants(self, request: HttpRequest, period_id: UUID):
+    def list_encadrants(self, request: HttpRequest, period_id: UUID, page: int = 1, page_size: int = 20):
         """
-        List encadrants for a TER period.
+        List encadrants for a TER period (paginated).
 
         Returns all professors and supervisors who have subjects
         in this period (derived from TERSubject.professor and TERSubject.supervisor).
@@ -557,4 +563,9 @@ class TERPeriodController(BaseAPI):
 
         encadrants = User.objects.filter(id__in=all_ids).order_by("last_name", "first_name")
 
-        return 200, [UserMinimalSchema.from_user(u) for u in encadrants]
+        items, count, pg, ps = paginate_queryset(encadrants, page, page_size)
+
+        return 200, PaginatedResponseSchema(
+            count=count, page=pg, page_size=ps,
+            results=[UserMinimalSchema.from_user(u) for u in items],
+        )

@@ -60,7 +60,7 @@ def ter_period_open(db):
         assignment_date=today + timedelta(days=61),
         project_start=today + timedelta(days=70),
         project_end=today + timedelta(days=180),
-        min_group_size=1,
+        min_group_size=2,
         max_group_size=4,
     )
 
@@ -80,7 +80,7 @@ def ter_period_formation_ended(db):
         assignment_date=today + timedelta(days=15),
         project_start=today + timedelta(days=20),
         project_end=today + timedelta(days=120),
-        min_group_size=1,
+        min_group_size=2,
         max_group_size=4,
     )
 
@@ -100,7 +100,7 @@ def ter_period_draft(db):
         assignment_date=today + timedelta(days=165),
         project_start=today + timedelta(days=170),
         project_end=today + timedelta(days=280),
-        min_group_size=1,
+        min_group_size=2,
         max_group_size=4,
     )
 
@@ -292,8 +292,8 @@ class TestListGroupsEndpoint:
         assert response.status_code == 200
 
         data = response.json()
-        assert len(data) == 2
-        names = [g["name"] for g in data]
+        assert data["count"] == 2
+        names = [g["name"] for g in data["results"]]
         assert "Group A" in names
         assert "Group B" in names
 
@@ -320,8 +320,8 @@ class TestListGroupsEndpoint:
         assert response.status_code == 200
 
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["name"] == "Group Period 1"
+        assert data["count"] == 1
+        assert data["results"][0]["name"] == "Group Period 1"
 
 
 @pytest.mark.django_db
@@ -388,7 +388,7 @@ class TestMyGroupsEndpoint:
             assignment_date=today + timedelta(days=61),
             project_start=today + timedelta(days=70),
             project_end=today + timedelta(days=180),
-            min_group_size=1,
+            min_group_size=2,
             max_group_size=4,
         )
 
