@@ -19,6 +19,7 @@ class TERSubjectListSchema(Schema):
     id: UUID
     title: str
     domain: str
+    tags: list[str] = []
     professor: UserMinimalSchema | None
     status: str
     max_groups: int
@@ -35,6 +36,7 @@ class TERSubjectDetailSchema(Schema):
     title: str
     description: str
     domain: str
+    tags: list[str] = []
     prerequisites: str
     professor: UserMinimalSchema | None
     supervisor: UserMinimalSchema | None
@@ -56,6 +58,7 @@ class TERSubjectCreateSchema(Schema):
     title: str
     description: str
     domain: str
+    tags: list[str] = []
     prerequisites: str = ""
     supervisor_id: UUID | None = None
     max_groups: int = 1
@@ -104,6 +107,7 @@ class TERSubjectUpdateSchema(Schema):
     title: str | None = None
     description: str | None = None
     domain: str | None = None
+    tags: list[str] | None = None
     prerequisites: str | None = None
     supervisor_id: UUID | None = None
     max_groups: int | None = None

@@ -16,6 +16,7 @@ import uuid
 from datetime import date
 
 from django.conf import settings
+from django.contrib.postgres.fields import ArrayField
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django_fsm import FSMField
@@ -184,6 +185,13 @@ class TERSubject(BaseModel):
         _("domain"),
         max_length=100,
         help_text=_("e.g., 'IA/ML', 'Securite', 'Web', 'Systemes'"),
+    )
+    tags = ArrayField(
+        models.CharField(max_length=50),
+        default=list,
+        blank=True,
+        verbose_name=_("tags"),
+        help_text=_("Technology tags, e.g., ['Python', 'React', 'PostgreSQL']"),
     )
     prerequisites = models.TextField(
         _("prerequisites"),

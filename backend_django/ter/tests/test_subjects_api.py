@@ -438,3 +438,113 @@ class TestListSubjectsWithNullPeriod:
         data = response.json()
         assert data["count"] == 1
         assert data["results"][0]["ter_period_id"] == str(ter_period.id)
+
+
+class TestSubjectTags:
+    """Tests for TER subject tags field."""
+
+    def test_create_subject_with_tags(self, client: Client, encadrant_user):
+        """Encadrant can create a subject with tags."""
+        client.force_login(encadrant_user)
+
+        response = client.post(
+            "/api/ter/subjects/",
+            data={
+                "title": "Sujet avec des tags technos",
+                "description": "Une description detaillee du sujet de recherche qui fait plus de 50 caracteres.",
+                "domain": "Web",
+                "tags": ["Python", "React", "PostgreSQL"],
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["tags"] == ["Python", "React", "PostgreSQL"]
+
+    def test_create_subject_without_tags_defaults_to_empty(self, client: Client, encadrant_user):
+        """Creating a subject without tags results in empty list."""
+        client.force_login(encadrant_user)
+
+        response = client.post(
+            "/api/ter/subjects/",
+            data={
+                "title": "Sujet sans tags specifiques",
+                "description": "Une description detaillee du sujet de recherche qui fait plus de 50 caracteres.",
+                "domain": "IA/ML",
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["tags"] == []
+
+    def test_update_subject_tags(self, client: Client, encadrant_user):
+        """Encadrant can update tags on an existing subject."""
+        client.force_login(encadrant_user)
+
+        # Create subject
+        subject = TERSubject.objects.create(
+            ter_period=None,
+            title="Sujet a modifier",
+            description="Description longue pour passer la validation minimale de 50 caracteres.",
+            domain="Securite",
+            tags=["Java"],
+            professor=encadrant_user,
+            status=SubjectStatus.DRAFT,
+        )
+
+        response = client.put(
+            f"/api/ter/subjects/{subject.id}",
+            data={
+                "tags": ["Python", "Django", "REST"],
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["tags"] == ["Python", "Django", "REST"]
+
+    def test_get_subject_returns_tags(self, client: Client, encadrant_user):
+        """GET subject detail returns tags field."""
+        client.force_login(encadrant_user)
+
+        subject = TERSubject.objects.create(
+            ter_period=None,
+            title="Sujet avec tags",
+            description="Description longue pour passer la validation minimale de 50 caracteres.",
+            domain="DevOps",
+            tags=["Docker", "Kubernetes", "CI/CD"],
+            professor=encadrant_user,
+            status=SubjectStatus.DRAFT,
+        )
+
+        response = client.get(f"/api/ter/subjects/{subject.id}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["tags"] == ["Docker", "Kubernetes", "CI/CD"]
+
+    def test_list_subjects_returns_tags(self, client: Client, encadrant_user):
+        """GET subjects list returns tags in each item."""
+        client.force_login(encadrant_user)
+
+        TERSubject.objects.create(
+            ter_period=None,
+            title="Sujet liste avec tags",
+            description="Description longue pour passer la validation minimale de 50 caracteres.",
+            domain="Mobile",
+            tags=["Flutter", "Dart"],
+            professor=encadrant_user,
+            status=SubjectStatus.DRAFT,
+        )
+
+        response = client.get("/api/ter/subjects/me")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["count"] >= 1
+        subject_data = next(s for s in data["results"] if s["domain"] == "Mobile")
+        assert subject_data["tags"] == ["Flutter", "Dart"]
