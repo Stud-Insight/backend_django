@@ -2,6 +2,7 @@
 TER Rankings API controller.
 """
 
+from datetime import date
 from uuid import UUID
 
 from django.db import transaction
@@ -115,6 +116,14 @@ class TERRankingController(BaseAPI):
         if not group.ter_period:
             return BadRequestError(
                 "Ce groupe n'est pas lie a une periode TER."
+            ).to_response()
+
+        # 4.3: Check ranking deadline has not passed
+        today = date.today()
+        if today > group.ter_period.subject_selection_end:
+            return BadRequestError(
+                "La periode de classement est terminee. "
+                f"Date limite: {group.ter_period.subject_selection_end.strftime('%d/%m/%Y')}."
             ).to_response()
 
         # Get all validated subjects for this period

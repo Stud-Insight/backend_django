@@ -211,3 +211,60 @@ class AddStudentSchema(Schema):
     """Schema for adding a student to a TER period."""
 
     user_id: UUID
+
+
+class ChoiceDistributionSchema(Schema):
+    """Distribution of groups by choice rank."""
+
+    rank: int
+    count: int
+    percentage: float
+
+
+class UnassignedSubjectSchema(Schema):
+    """Schema for unassigned subject info."""
+
+    id: UUID
+    title: str
+    max_groups: int
+    current_assignments: int
+
+
+class UnassignedGroupSchema(Schema):
+    """Schema for unassigned group info."""
+
+    id: UUID
+    name: str
+    member_count: int
+    has_rankings: bool
+
+
+class AssignmentStatisticsSchema(Schema):
+    """
+    Statistics for assignment quality evaluation.
+
+    Used by Respo TER to evaluate the fairness and quality
+    of the stable marriage algorithm results.
+    """
+
+    # Summary
+    total_groups: int
+    assigned_groups: int
+    unassigned_groups: int
+    total_subjects: int
+    assigned_subjects: int
+    unassigned_subjects: int
+
+    # Choice distribution
+    choice_distribution: list[ChoiceDistributionSchema]
+    average_choice_rank: float | None  # Average rank of assigned choices (1.0 = perfect)
+
+    # Detailed lists
+    unassigned_groups_list: list[UnassignedGroupSchema]
+    unassigned_subjects_list: list[UnassignedSubjectSchema]
+
+    # Satisfaction metrics
+    groups_with_first_choice: int
+    groups_with_first_choice_percentage: float
+    groups_with_top_3_choice: int
+    groups_with_top_3_choice_percentage: float

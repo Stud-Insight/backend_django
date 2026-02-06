@@ -1267,6 +1267,7 @@ class TestAPIEdgeCases:
             data={
                 "group_id": str(group.id),
                 "subject_id": str(subject_web.id),
+                "reason": "Test reason",
             },
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf,
@@ -1309,6 +1310,7 @@ class TestAPIEdgeCases:
             data={
                 "group_id": str(other_group.id),
                 "subject_id": str(subject_security.id),
+                "reason": "Test reason",
             },
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf,
@@ -1334,7 +1336,7 @@ class TestAPIEdgeCases:
         csrf = _get_csrf(staff_client)
         response = staff_client.post(
             f"/api/ter/periods/{ter_period_open.id}/groups/{group.id}/revert-assignment",
-            data={"reopen_group": True},
+            data={"reopen_group": True, "reason": "Test reason"},
             content_type="application/json",
             HTTP_X_CSRFTOKEN=csrf,
         )

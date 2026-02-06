@@ -163,6 +163,9 @@ class TERSubject(BaseModel):
         on_delete=models.CASCADE,
         related_name="subjects",
         verbose_name=_("TER period"),
+        null=True,
+        blank=True,
+        help_text=_("Optional: can be assigned later when submitting for approval"),
     )
     title = models.CharField(
         _("title"),

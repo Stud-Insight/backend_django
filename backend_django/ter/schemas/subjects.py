@@ -24,7 +24,7 @@ class TERSubjectListSchema(Schema):
     max_groups: int
     min_group_size: int | None
     max_group_size: int | None
-    ter_period_id: UUID
+    ter_period_id: UUID | None  # Nullable: can be draft without period
     created: str
 
 
@@ -43,7 +43,7 @@ class TERSubjectDetailSchema(Schema):
     max_group_size: int | None
     status: str
     rejection_reason: str
-    ter_period_id: UUID
+    ter_period_id: UUID | None  # Nullable: can be draft without period
     created: str
     modified: str
     is_favorite: bool = False
@@ -52,7 +52,7 @@ class TERSubjectDetailSchema(Schema):
 class TERSubjectCreateSchema(Schema):
     """Schema for creating a TER subject."""
 
-    ter_period_id: UUID
+    ter_period_id: UUID | None = None  # Optional: can create draft without period
     title: str
     description: str
     domain: str
@@ -100,6 +100,7 @@ class TERSubjectCreateSchema(Schema):
 class TERSubjectUpdateSchema(Schema):
     """Schema for updating a TER subject."""
 
+    ter_period_id: UUID | None = None  # Can assign/change period
     title: str | None = None
     description: str | None = None
     domain: str | None = None

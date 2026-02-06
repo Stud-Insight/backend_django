@@ -218,6 +218,7 @@ class TERSubjectController(BaseAPI):
 
         Professors and staff can create subjects.
         New subjects are created with status 'draft'.
+        ter_period_id is optional - subjects can be created as drafts without a period.
         """
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
@@ -228,34 +229,39 @@ class TERSubjectController(BaseAPI):
                 "Seuls les encadrants peuvent proposer des sujets TER."
             ).to_response()
 
-        # Check TER period exists and is open
-        ter_period = get_object_or_404(TERPeriod, id=data.ter_period_id)
-        if ter_period.status != PeriodStatus.OPEN and not is_ter_admin(request.user):
-            return BadRequestError(
-                "La periode TER n'est pas ouverte."
-            ).to_response()
+        # Check TER period if provided
+        ter_period = None
+        if data.ter_period_id:
+            ter_period = get_object_or_404(TERPeriod, id=data.ter_period_id)
+            if ter_period.status != PeriodStatus.OPEN and not is_ter_admin(request.user):
+                return BadRequestError(
+                    "La periode TER n'est pas ouverte."
+                ).to_response()
+
+            # Validate group size bounds against period
+            if data.min_group_size is not None:
+                if data.min_group_size < ter_period.min_group_size:
+                    return BadRequestError(
+                        f"min_group_size ne peut pas être inférieur à celui de la période ({ter_period.min_group_size})."
+                    ).to_response()
+
+            if data.max_group_size is not None:
+                if data.max_group_size > ter_period.max_group_size:
+                    return BadRequestError(
+                        f"max_group_size ne peut pas être supérieur à celui de la période ({ter_period.max_group_size})."
+                    ).to_response()
+
+        # Validate min/max group size relationship
+        if data.min_group_size is not None and data.max_group_size is not None:
+            if data.min_group_size > data.max_group_size:
+                return BadRequestError(
+                    "min_group_size ne peut pas être supérieur à max_group_size."
+                ).to_response()
 
         # Validate supervisor if provided
         supervisor = None
         if data.supervisor_id:
             supervisor = get_object_or_404(User, id=data.supervisor_id)
-
-        # Validate group size bounds against period
-        if data.min_group_size is not None:
-            if data.min_group_size < ter_period.min_group_size:
-                return BadRequestError(
-                    f"min_group_size ne peut pas être inférieur à celui de la période ({ter_period.min_group_size})."
-                ).to_response()
-            if data.max_group_size is not None and data.min_group_size > data.max_group_size:
-                return BadRequestError(
-                    "min_group_size ne peut pas être supérieur à max_group_size."
-                ).to_response()
-
-        if data.max_group_size is not None:
-            if data.max_group_size > ter_period.max_group_size:
-                return BadRequestError(
-                    f"max_group_size ne peut pas être supérieur à celui de la période ({ter_period.max_group_size})."
-                ).to_response()
 
         subject = TERSubject.objects.create(
             ter_period=ter_period,
@@ -302,6 +308,15 @@ class TERSubjectController(BaseAPI):
                 "Seuls les sujets en brouillon ou rejetes peuvent etre modifies."
             ).to_response()
 
+        # Handle ter_period assignment/change
+        if data.ter_period_id is not None:
+            new_period = get_object_or_404(TERPeriod, id=data.ter_period_id)
+            if new_period.status != PeriodStatus.OPEN and not is_ter_admin(request.user):
+                return BadRequestError(
+                    "La période TER n'est pas ouverte."
+                ).to_response()
+            subject.ter_period = new_period
+
         if data.title is not None:
             subject.title = data.title
         if data.description is not None:
@@ -316,14 +331,16 @@ class TERSubjectController(BaseAPI):
             subject.max_groups = data.max_groups
 
         if data.min_group_size is not None:
-            if data.min_group_size < subject.ter_period.min_group_size:
+            # Only validate against period bounds if subject has a period
+            if subject.ter_period and data.min_group_size < subject.ter_period.min_group_size:
                 return BadRequestError(
                     f"min_group_size ne peut pas être inférieur à celui de la période ({subject.ter_period.min_group_size})."
                 ).to_response()
             subject.min_group_size = data.min_group_size
 
         if data.max_group_size is not None:
-            if data.max_group_size > subject.ter_period.max_group_size:
+            # Only validate against period bounds if subject has a period
+            if subject.ter_period and data.max_group_size > subject.ter_period.max_group_size:
                 return BadRequestError(
                     f"max_group_size ne peut pas être supérieur à celui de la période ({subject.ter_period.max_group_size})."
                 ).to_response()
@@ -351,11 +368,12 @@ class TERSubjectController(BaseAPI):
         response={200: TERSubjectDetailSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
         url_name="ter_subjects_submit",
     )
-    def submit_subject(self, request: HttpRequest, subject_id: UUID):
+    def submit_subject(self, request: HttpRequest, subject_id: UUID, ter_period_id: UUID | None = None):
         """
         Submit a TER subject for validation.
 
         Transitions from draft to submitted.
+        Requires a ter_period to be set (can be passed as query param if not already set).
         """
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
@@ -371,6 +389,32 @@ class TERSubjectController(BaseAPI):
             return BadRequestError(
                 f"Impossible de soumettre un sujet avec le statut '{subject.status}'."
             ).to_response()
+
+        # If subject has no period, require ter_period_id parameter
+        if not subject.ter_period:
+            if not ter_period_id:
+                return BadRequestError(
+                    "Une période TER est requise pour soumettre un sujet. "
+                    "Passez ter_period_id en paramètre."
+                ).to_response()
+
+            ter_period = get_object_or_404(TERPeriod, id=ter_period_id)
+            if ter_period.status != PeriodStatus.OPEN and not is_ter_admin(request.user):
+                return BadRequestError(
+                    "La période TER n'est pas ouverte."
+                ).to_response()
+
+            # Validate group size bounds against the new period
+            if subject.min_group_size is not None and subject.min_group_size < ter_period.min_group_size:
+                return BadRequestError(
+                    f"min_group_size ({subject.min_group_size}) est inférieur à celui de la période ({ter_period.min_group_size})."
+                ).to_response()
+            if subject.max_group_size is not None and subject.max_group_size > ter_period.max_group_size:
+                return BadRequestError(
+                    f"max_group_size ({subject.max_group_size}) est supérieur à celui de la période ({ter_period.max_group_size})."
+                ).to_response()
+
+            subject.ter_period = ter_period
 
         subject.status = SubjectStatus.SUBMITTED
         subject.save()

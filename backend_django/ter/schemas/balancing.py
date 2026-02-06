@@ -101,14 +101,16 @@ class ForceAssignRequestSchema(Schema):
     group_id: UUID
     subject_id: UUID
     close_group: bool = True
-    reason: str = ""
+    reason: str  # Required: admin must provide justification (4.9)
 
     @field_validator("reason")
     @classmethod
     def validate_reason(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Une justification est obligatoire pour les affectations manuelles.")
         if len(v) > 500:
             raise ValueError("La raison ne peut pas depasser 500 caracteres.")
-        return v
+        return v.strip()
 
 
 class ForceFormRequestSchema(Schema):
@@ -128,14 +130,16 @@ class RevertAssignmentRequestSchema(Schema):
     """Schema for reverting a subject assignment."""
 
     reopen_group: bool = True
-    reason: str = ""
+    reason: str  # Required: admin must provide justification (4.9)
 
     @field_validator("reason")
     @classmethod
     def validate_reason(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Une justification est obligatoire pour les modifications d'affectation.")
         if len(v) > 500:
             raise ValueError("La raison ne peut pas depasser 500 caracteres.")
-        return v
+        return v.strip()
 
 
 class BalancingOperationSchema(Schema):

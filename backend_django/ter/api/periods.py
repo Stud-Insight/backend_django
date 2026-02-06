@@ -21,15 +21,19 @@ from backend_django.core.exceptions import (
 from backend_django.core.roles import is_ter_admin
 from backend_django.core.schemas import PaginatedResponseSchema, paginate_queryset
 from backend_django.groups.models import Group
-from backend_django.ter.models import PeriodStatus, SubjectStatus, TERPeriod, TERSubject
+from backend_django.ter.models import PeriodStatus, SubjectStatus, TERPeriod, TERRanking, TERSubject
 from backend_django.ter.schemas.periods import (
     AddStudentSchema,
+    AssignmentStatisticsSchema,
+    ChoiceDistributionSchema,
     TERPeriodCopySchema,
     TERPeriodCreateSchema,
     TERPeriodDetailSchema,
     TERPeriodSchema,
     TERPeriodStatsSchema,
     TERPeriodUpdateSchema,
+    UnassignedGroupSchema,
+    UnassignedSubjectSchema,
 )
 from backend_django.users.schemas import UserMinimalSchema
 from backend_django.users.models import User
@@ -429,6 +433,144 @@ class TERPeriodController(BaseAPI):
             subjects_total=subjects_total,
             subjects_validated=subjects_validated,
             subjects_assigned=subjects_assigned,
+        )
+
+    @http_get(
+        "/{period_id}/assignment-statistics",
+        response={200: AssignmentStatisticsSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="ter_periods_assignment_stats",
+    )
+    def get_assignment_statistics(self, request: HttpRequest, period_id: UUID):
+        """
+        Get detailed assignment statistics for algorithm quality evaluation.
+
+        Returns:
+        - Distribution of groups by their assigned choice rank
+        - Average satisfaction score
+        - Lists of unassigned groups and subjects
+        - Percentage metrics for quality assessment
+
+        Only staff members (Respo TER) can view assignment statistics.
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        if not is_ter_admin(request.user):
+            return PermissionDeniedError(
+                "Seuls les responsables TER peuvent consulter les statistiques d'affectation."
+            ).to_response()
+
+        period = get_object_or_404(TERPeriod, id=period_id)
+
+        # Get all groups for this period
+        all_groups = Group.objects.filter(ter_period=period)
+        total_groups = all_groups.count()
+
+        # Get assigned and unassigned groups
+        assigned_groups = all_groups.filter(assigned_subject__isnull=False)
+        unassigned_groups = all_groups.filter(assigned_subject__isnull=True)
+        assigned_groups_count = assigned_groups.count()
+        unassigned_groups_count = unassigned_groups.count()
+
+        # Get all validated subjects
+        all_subjects = TERSubject.objects.filter(
+            ter_period=period,
+            status=SubjectStatus.VALIDATED,
+        )
+        total_subjects = all_subjects.count()
+
+        # Get subjects with at least one assignment
+        assigned_subject_ids = assigned_groups.values_list("assigned_subject_id", flat=True)
+        assigned_subjects_count = len(set(assigned_subject_ids))
+        unassigned_subjects_count = total_subjects - assigned_subjects_count
+
+        # Calculate choice distribution
+        choice_counts = {}
+        total_rank_sum = 0
+        valid_assignments = 0
+
+        for group in assigned_groups:
+            # Find this group's ranking for their assigned subject
+            ranking = TERRanking.objects.filter(
+                group=group,
+                subject=group.assigned_subject,
+            ).first()
+
+            if ranking:
+                rank = ranking.rank
+                choice_counts[rank] = choice_counts.get(rank, 0) + 1
+                total_rank_sum += rank
+                valid_assignments += 1
+
+        # Build choice distribution
+        choice_distribution = []
+        for rank in sorted(choice_counts.keys()):
+            count = choice_counts[rank]
+            percentage = (count / assigned_groups_count * 100) if assigned_groups_count > 0 else 0
+            choice_distribution.append(ChoiceDistributionSchema(
+                rank=rank,
+                count=count,
+                percentage=round(percentage, 1),
+            ))
+
+        # Calculate average choice rank
+        average_choice_rank = None
+        if valid_assignments > 0:
+            average_choice_rank = round(total_rank_sum / valid_assignments, 2)
+
+        # Calculate satisfaction metrics
+        groups_with_first_choice = choice_counts.get(1, 0)
+        groups_with_first_choice_pct = (
+            (groups_with_first_choice / assigned_groups_count * 100)
+            if assigned_groups_count > 0 else 0
+        )
+
+        groups_with_top_3 = sum(choice_counts.get(i, 0) for i in [1, 2, 3])
+        groups_with_top_3_pct = (
+            (groups_with_top_3 / assigned_groups_count * 100)
+            if assigned_groups_count > 0 else 0
+        )
+
+        # Build unassigned groups list
+        unassigned_groups_list = []
+        for group in unassigned_groups:
+            has_rankings = TERRanking.objects.filter(group=group).exists()
+            unassigned_groups_list.append(UnassignedGroupSchema(
+                id=group.id,
+                name=group.name,
+                member_count=group.member_count,
+                has_rankings=has_rankings,
+            ))
+
+        # Build unassigned subjects list
+        unassigned_subjects_list = []
+        for subject in all_subjects.exclude(id__in=assigned_subject_ids):
+            current_count = Group.objects.filter(
+                ter_period=period,
+                assigned_subject=subject,
+            ).count()
+            unassigned_subjects_list.append(UnassignedSubjectSchema(
+                id=subject.id,
+                title=subject.title,
+                max_groups=subject.max_groups,
+                current_assignments=current_count,
+            ))
+
+        return 200, AssignmentStatisticsSchema(
+            total_groups=total_groups,
+            assigned_groups=assigned_groups_count,
+            unassigned_groups=unassigned_groups_count,
+            total_subjects=total_subjects,
+            assigned_subjects=assigned_subjects_count,
+            unassigned_subjects=unassigned_subjects_count,
+            choice_distribution=choice_distribution,
+            average_choice_rank=average_choice_rank,
+            unassigned_groups_list=unassigned_groups_list,
+            unassigned_subjects_list=unassigned_subjects_list,
+            groups_with_first_choice=groups_with_first_choice,
+            groups_with_first_choice_percentage=round(groups_with_first_choice_pct, 1),
+            groups_with_top_3_choice=groups_with_top_3,
+            groups_with_top_3_choice_percentage=round(groups_with_top_3_pct, 1),
         )
 
     # ==================== Students Management ====================
