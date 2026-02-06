@@ -52,6 +52,16 @@ class OfferStatus(models.TextChoices):
     REJECTED = "rejected", _("Rejete")
 
 
+class ApplicationStatus(models.TextChoices):
+    """Status choices for stage applications."""
+
+    PENDING = "pending", _("En attente")
+    ACCEPTED = "accepted", _("Acceptee")
+    REJECTED = "rejected", _("Rejetee")
+    WITHDRAWN = "withdrawn", _("Retiree")
+    CONFIRMED = "confirmed", _("Confirmee")
+
+
 class StagePeriod(BaseModel):
     """
     Internship (Stage) academic period.
@@ -283,3 +293,115 @@ class StageFavorite(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.student.email} - {self.offer.title}"
+
+
+class StageApplication(BaseModel):
+    """
+    Student application to a stage offer.
+
+    Tracks the full application lifecycle from submission to confirmation.
+    """
+
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="stage_applications",
+        verbose_name=_("student"),
+    )
+    offer = models.ForeignKey(
+        StageOffer,
+        on_delete=models.CASCADE,
+        related_name="applications",
+        verbose_name=_("offer"),
+    )
+    status = models.CharField(
+        _("status"),
+        max_length=20,
+        choices=ApplicationStatus.choices,
+        default=ApplicationStatus.PENDING,
+    )
+
+    # Application details
+    motivation = models.TextField(
+        _("motivation"),
+        help_text=_("Student's motivation letter or message"),
+    )
+    cv_url = models.URLField(
+        _("CV URL"),
+        blank=True,
+        help_text=_("Link to student's CV"),
+    )
+
+    # Decision tracking
+    decision_date = models.DateTimeField(
+        _("decision date"),
+        null=True,
+        blank=True,
+        help_text=_("When the application was accepted/rejected"),
+    )
+    decision_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="stage_decisions_made",
+        verbose_name=_("decision by"),
+    )
+    rejection_reason = models.TextField(
+        _("rejection reason"),
+        blank=True,
+    )
+
+    # Confirmation tracking (after acceptance)
+    confirmed_at = models.DateTimeField(
+        _("confirmed at"),
+        null=True,
+        blank=True,
+        help_text=_("When the student confirmed the assignment"),
+    )
+
+    # Academic encadrant assignment (after confirmation)
+    academic_supervisor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="stage_supervisions",
+        verbose_name=_("academic supervisor"),
+        help_text=_("Academic supervisor assigned after confirmation"),
+    )
+
+    class Meta:
+        verbose_name = _("stage application")
+        verbose_name_plural = _("stage applications")
+        ordering = ["-created"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["student", "offer"],
+                name="unique_stage_application",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.student.email} -> {self.offer.title} ({self.status})"
+
+    def can_be_decided_by(self, user) -> bool:
+        """Check if user can accept/reject this application."""
+        # Offer supervisor or staff can decide
+        return (
+            self.offer.supervisor_id == user.id
+            or user.is_staff
+        )
+
+    def can_be_withdrawn_by(self, user) -> bool:
+        """Check if user can withdraw this application."""
+        return self.student_id == user.id and self.status == ApplicationStatus.PENDING
+
+    def can_be_confirmed_by(self, user) -> bool:
+        """Check if user can confirm this application."""
+        return self.student_id == user.id and self.status == ApplicationStatus.ACCEPTED
+
+    @property
+    def is_modifiable(self) -> bool:
+        """Check if application can still be modified."""
+        return self.status == ApplicationStatus.PENDING
