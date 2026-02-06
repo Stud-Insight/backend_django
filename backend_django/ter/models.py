@@ -711,3 +711,319 @@ class DeliverableAccessLog(BaseModel):
             user_agent=user_agent[:500] if user_agent else "",  # Truncate long user agents
             details=details or {},
         )
+
+
+class GradeStatus(models.TextChoices):
+    """Status choices for TER grades."""
+
+    DRAFT = "draft", _("Brouillon")
+    SUBMITTED = "submitted", _("Soumis")
+    FINALIZED = "finalized", _("Finalise")
+
+
+class TERGrade(BaseModel):
+    """
+    TER group grade entered by encadrant.
+
+    Supports optional individual grading where students can opt-in
+    to receive a different grade from the group grade.
+    """
+
+    ter_period = models.ForeignKey(
+        TERPeriod,
+        on_delete=models.CASCADE,
+        related_name="grades",
+        verbose_name=_("TER period"),
+    )
+    group = models.OneToOneField(
+        "groups.Group",
+        on_delete=models.CASCADE,
+        related_name="ter_grade",
+        verbose_name=_("group"),
+    )
+    graded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="ter_grades_given",
+        verbose_name=_("graded by"),
+        help_text=_("Encadrant who entered the grade"),
+    )
+
+    # Group grade (0-20 scale)
+    group_grade = models.DecimalField(
+        _("group grade"),
+        max_digits=4,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=_("Grade on 0-20 scale"),
+    )
+    group_grade_comment = models.TextField(
+        _("grade comment"),
+        blank=True,
+        help_text=_("Comment explaining the grade"),
+    )
+
+    # Individual grading option
+    individual_grading_enabled = models.BooleanField(
+        _("individual grading enabled"),
+        default=False,
+        help_text=_("If true, students can opt-in for individual grades"),
+    )
+
+    # Finalization
+    status = models.CharField(
+        _("status"),
+        max_length=20,
+        choices=GradeStatus.choices,
+        default=GradeStatus.DRAFT,
+    )
+    finalized_at = models.DateTimeField(
+        _("finalized at"),
+        null=True,
+        blank=True,
+    )
+    finalized_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ter_grades_finalized",
+        verbose_name=_("finalized by"),
+    )
+
+    class Meta:
+        verbose_name = _("TER grade")
+        verbose_name_plural = _("TER grades")
+        ordering = ["-created"]
+
+    def __str__(self) -> str:
+        grade_str = f"{self.group_grade}/20" if self.group_grade else "Non noté"
+        return f"{self.group.name} - {grade_str}"
+
+    def can_be_graded_by(self, user) -> bool:
+        """Check if user can enter/modify grades for this group."""
+        # Encadrant assigned to the group's subject can grade
+        if hasattr(self.group, "assigned_subject") and self.group.assigned_subject:
+            subject = self.group.assigned_subject
+            if subject.professor_id == user.id or subject.supervisor_id == user.id:
+                return True
+        # Admin can grade
+        if user.is_staff or user.is_superuser:
+            return True
+        return False
+
+    def is_modifiable(self) -> bool:
+        """Check if grade can still be modified."""
+        return self.status != GradeStatus.FINALIZED
+
+
+class TERIndividualGrade(BaseModel):
+    """
+    Individual grade for a student who opted-in.
+
+    Students can opt-in to receive an individual grade different
+    from the group grade. The final grade is computed based on opt-in status.
+    """
+
+    grade = models.ForeignKey(
+        TERGrade,
+        on_delete=models.CASCADE,
+        related_name="individual_grades",
+        verbose_name=_("TER grade"),
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="ter_individual_grades",
+        verbose_name=_("student"),
+    )
+
+    # Opt-in tracking
+    opted_in = models.BooleanField(
+        _("opted in"),
+        default=False,
+    )
+    opted_in_at = models.DateTimeField(
+        _("opted in at"),
+        null=True,
+        blank=True,
+    )
+
+    # Individual grade (only used if opted_in=True)
+    individual_grade = models.DecimalField(
+        _("individual grade"),
+        max_digits=4,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=_("Individual grade on 0-20 scale"),
+    )
+    individual_grade_comment = models.TextField(
+        _("individual grade comment"),
+        blank=True,
+    )
+
+    # Final computed grade
+    final_grade = models.DecimalField(
+        _("final grade"),
+        max_digits=4,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=_("Computed final grade (individual if opted-in, otherwise group)"),
+    )
+
+    class Meta:
+        verbose_name = _("TER individual grade")
+        verbose_name_plural = _("TER individual grades")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["grade", "student"],
+                name="unique_ter_individual_grade_per_student",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        grade_str = f"{self.final_grade}/20" if self.final_grade else "Non calculé"
+        return f"{self.student.email} - {grade_str}"
+
+    def compute_final_grade(self) -> None:
+        """Compute final grade based on opt-in status."""
+        if self.opted_in and self.individual_grade is not None:
+            self.final_grade = self.individual_grade
+        elif self.grade.group_grade is not None:
+            self.final_grade = self.grade.group_grade
+        else:
+            self.final_grade = None
+
+
+class PeerReviewSession(BaseModel):
+    """
+    Ephemeral token mapping for anonymous peer review.
+
+    This table is DESTROYED after the peer review deadline to ensure
+    true anonymity (ARCH-15). Before destruction, it enables:
+    - Tracking who has/hasn't submitted for reminders
+    - Preventing duplicate submissions
+    """
+
+    ter_period = models.ForeignKey(
+        TERPeriod,
+        on_delete=models.CASCADE,
+        related_name="peer_review_sessions",
+        verbose_name=_("TER period"),
+    )
+    ephemeral_token = models.UUIDField(
+        _("ephemeral token"),
+        unique=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="peer_review_sessions",
+        verbose_name=_("student"),
+    )
+    group = models.ForeignKey(
+        "groups.Group",
+        on_delete=models.CASCADE,
+        related_name="peer_review_sessions",
+        verbose_name=_("group"),
+    )
+    expires_at = models.DateTimeField(
+        _("expires at"),
+        help_text=_("When this session (and the mapping) will be destroyed"),
+    )
+
+    class Meta:
+        verbose_name = _("peer review session")
+        verbose_name_plural = _("peer review sessions")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["ter_period", "student"],
+                name="unique_peer_review_session_per_student",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Session {self.ephemeral_token} - {self.student.email}"
+
+
+class PeerReview(BaseModel):
+    """
+    Anonymous peer review submitted by a student.
+
+    Uses ephemeral_token instead of direct user link. After the
+    PeerReviewSession is destroyed, it becomes impossible to trace
+    who submitted which review (NFR-S7).
+    """
+
+    ter_period = models.ForeignKey(
+        TERPeriod,
+        on_delete=models.CASCADE,
+        related_name="peer_reviews",
+        verbose_name=_("TER period"),
+    )
+    group = models.ForeignKey(
+        "groups.Group",
+        on_delete=models.CASCADE,
+        related_name="peer_reviews",
+        verbose_name=_("group"),
+    )
+
+    # Token-based anonymity (no FK to User for reviewer)
+    reviewer_token = models.CharField(
+        _("reviewer token"),
+        max_length=36,
+        help_text=_("Ephemeral token of the reviewer (session may be deleted)"),
+    )
+
+    # Who is being reviewed
+    reviewed_student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="peer_reviews_received",
+        verbose_name=_("reviewed student"),
+    )
+
+    # Review scores (1-5 scale)
+    contribution_score = models.PositiveSmallIntegerField(
+        _("contribution score"),
+        help_text=_("1-5 scale for project contribution"),
+    )
+    collaboration_score = models.PositiveSmallIntegerField(
+        _("collaboration score"),
+        help_text=_("1-5 scale for teamwork and communication"),
+    )
+    technical_skill_score = models.PositiveSmallIntegerField(
+        _("technical skill score"),
+        help_text=_("1-5 scale for technical abilities"),
+    )
+
+    comment = models.TextField(
+        _("comment"),
+        blank=True,
+        help_text=_("Optional qualitative feedback"),
+    )
+
+    class Meta:
+        verbose_name = _("peer review")
+        verbose_name_plural = _("peer reviews")
+        ordering = ["-created"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["group", "reviewer_token", "reviewed_student"],
+                name="unique_peer_review_per_reviewer_reviewed",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Review for {self.reviewed_student.email} (token: {self.reviewer_token[:8]}...)"
+
+    @property
+    def average_score(self) -> float:
+        """Calculate average of the three scores."""
+        return (self.contribution_score + self.collaboration_score + self.technical_skill_score) / 3

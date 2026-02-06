@@ -1,7 +1,7 @@
 """
-Celery tasks for TER deliverables.
+Celery tasks for TER deliverables and peer reviews.
 
-Handles async file processing for large uploads.
+Handles async file processing for large uploads and peer review anonymity cleanup.
 """
 
 import logging
@@ -127,6 +127,45 @@ def cleanup_failed_uploads() -> dict:
         deliverable.delete()
 
     logger.info("Cleaned up %d failed deliverables", count)
+
+    return {
+        "success": True,
+        "cleaned_up": count,
+    }
+
+
+@shared_task
+def cleanup_expired_peer_review_sessions() -> dict:
+    """
+    Cleanup expired peer review sessions for anonymity compliance.
+
+    This periodic task removes expired ephemeral tokens to ensure
+    reviewer anonymity is maintained (ARCH-7, NFR-S7).
+
+    Sessions expire 24 hours after creation to prevent token reuse.
+
+    Returns:
+        Dict with cleanup results
+    """
+    from django.utils import timezone
+
+    from backend_django.ter.models import PeerReviewSession
+
+    expired_sessions = PeerReviewSession.objects.filter(expires_at__lt=timezone.now())
+
+    count = expired_sessions.count()
+
+    for session in expired_sessions:
+        logger.info(
+            "Cleaning up expired peer review session: %s (student: %s)",
+            session.ephemeral_token,
+            session.student_id,
+        )
+
+    # Delete all expired sessions
+    expired_sessions.delete()
+
+    logger.info("Cleaned up %d expired peer review sessions", count)
 
     return {
         "success": True,
