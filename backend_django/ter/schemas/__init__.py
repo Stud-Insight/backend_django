@@ -13,6 +13,16 @@ from .balancing import (
     MoveStudentRequestSchema,
     RevertAssignmentRequestSchema,
 )
+from .deliverables import (
+    FILE_SIZE_LIMIT_BYTES,
+    FILE_SIZE_LIMIT_MB,
+    TERDeliverableListSchema,
+    TERDeliverableSchema,
+    TERDeliverableUpdateSchema,
+    TERDeliverableUploadResponse,
+    TERDeliverableUploadSchema,
+    UploadStatusResponse,
+)
 from .periods import (
     TERPeriodCopySchema,
     TERPeriodCreateSchema,
@@ -65,4 +75,13 @@ __all__ = [
     "RevertAssignmentRequestSchema",
     "BalancingOperationSchema",
     "BalancingOperationListSchema",
+    # Deliverables
+    "TERDeliverableSchema",
+    "TERDeliverableListSchema",
+    "TERDeliverableUploadSchema",
+    "TERDeliverableUploadResponse",
+    "TERDeliverableUpdateSchema",
+    "UploadStatusResponse",
+    "FILE_SIZE_LIMIT_MB",
+    "FILE_SIZE_LIMIT_BYTES",
 ]

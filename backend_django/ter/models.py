@@ -7,9 +7,12 @@ Contains:
 - TERRanking: Group rankings of subjects
 - TERFavorite: Individual student favorites
 - BalancingOperation: Audit log for group balancing operations
+- TERDeliverable: File deliverables uploaded by groups
+- DeliverableUpload: Async upload tracking for large files
 """
 
 import logging
+import uuid
 from datetime import date
 
 from django.conf import settings
@@ -18,6 +21,9 @@ from django.utils.translation import gettext_lazy as _
 from django_fsm import FSMField
 
 from backend_django.core.models import BaseModel
+
+# File size limit: 50MB
+MAX_DELIVERABLE_SIZE_BYTES = 50 * 1024 * 1024  # 50MB
 
 logger = logging.getLogger(__name__)
 
@@ -427,3 +433,150 @@ class BalancingOperation(BaseModel):
             self.performed_by.email if self.performed_by else "Inconnu"
         )
         return f"{self.get_operation_type_display()} - {self.ter_period.name} ({performer})"
+
+
+class DeliverableType(models.TextChoices):
+    """Types of TER deliverables."""
+
+    REPORT = "report", _("Rapport")
+    CODE = "code", _("Code source")
+    PRESENTATION = "presentation", _("Presentation")
+    OTHER = "other", _("Autre")
+
+
+class UploadStatus(models.TextChoices):
+    """Status for async file uploads."""
+
+    PENDING = "pending", _("En attente")
+    PROCESSING = "processing", _("En cours")
+    COMPLETED = "completed", _("Termine")
+    FAILED = "failed", _("Echec")
+
+
+def deliverable_upload_path(instance: "TERDeliverable", filename: str) -> str:
+    """Generate upload path for TER deliverables."""
+    return f"ter/{instance.ter_period_id}/groups/{instance.group_id}/{uuid.uuid4()}/{filename}"
+
+
+class TERDeliverable(BaseModel):
+    """
+    File deliverable uploaded by a group for their TER project.
+
+    Links a file to a specific group within a TER period.
+    Supports async uploads for large files via Celery.
+    """
+
+    ter_period = models.ForeignKey(
+        TERPeriod,
+        on_delete=models.CASCADE,
+        related_name="deliverables",
+        verbose_name=_("TER period"),
+    )
+    group = models.ForeignKey(
+        "groups.Group",
+        on_delete=models.CASCADE,
+        related_name="ter_deliverables",
+        verbose_name=_("group"),
+    )
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="ter_deliverables_uploaded",
+        verbose_name=_("uploaded by"),
+    )
+
+    # File info
+    file = models.FileField(
+        _("file"),
+        upload_to=deliverable_upload_path,
+        max_length=500,  # Long paths with UUIDs
+        blank=True,  # Blank during async upload
+    )
+    original_filename = models.CharField(
+        _("original filename"),
+        max_length=255,
+    )
+    content_type = models.CharField(
+        _("content type"),
+        max_length=100,
+        default="application/octet-stream",
+    )
+    size = models.PositiveIntegerField(
+        _("file size"),
+        help_text=_("Size in bytes"),
+        default=0,
+    )
+
+    # Metadata
+    deliverable_type = models.CharField(
+        _("type"),
+        max_length=20,
+        choices=DeliverableType.choices,
+        default=DeliverableType.OTHER,
+    )
+    description = models.TextField(
+        _("description"),
+        blank=True,
+    )
+    is_confidential = models.BooleanField(
+        _("confidential"),
+        default=False,
+        help_text=_("If true, only group members and encadrant can access"),
+    )
+
+    # Async upload tracking
+    upload_status = models.CharField(
+        _("upload status"),
+        max_length=20,
+        choices=UploadStatus.choices,
+        default=UploadStatus.COMPLETED,  # Default for sync uploads
+    )
+    upload_error = models.TextField(
+        _("upload error"),
+        blank=True,
+        help_text=_("Error message if upload failed"),
+    )
+    celery_task_id = models.CharField(
+        _("Celery task ID"),
+        max_length=255,
+        blank=True,
+        help_text=_("Task ID for async upload tracking"),
+    )
+
+    class Meta:
+        verbose_name = _("TER deliverable")
+        verbose_name_plural = _("TER deliverables")
+        ordering = ["-created"]
+
+    def __str__(self) -> str:
+        return f"{self.original_filename} - {self.group.name}"
+
+    def can_be_viewed_by(self, user) -> bool:
+        """Check if user can view/download this deliverable."""
+        # Group members can always view
+        if self.group.members.filter(id=user.id).exists():
+            return True
+        # Encadrant (professor/supervisor of assigned subject) can view
+        if hasattr(self.group, "assigned_subject") and self.group.assigned_subject:
+            subject = self.group.assigned_subject
+            if subject.professor_id == user.id or subject.supervisor_id == user.id:
+                return True
+        # Admin/Respo TER can view all
+        if user.is_staff or user.is_superuser:
+            return True
+        # If not confidential, any authenticated user can view
+        if not self.is_confidential:
+            return True
+        return False
+
+    def can_be_managed_by(self, user) -> bool:
+        """Check if user can delete/modify this deliverable."""
+        # Only uploader, group leader, or admin can manage
+        if self.uploaded_by_id == user.id:
+            return True
+        if self.group.leader_id == user.id:
+            return True
+        if user.is_staff or user.is_superuser:
+            return True
+        return False
