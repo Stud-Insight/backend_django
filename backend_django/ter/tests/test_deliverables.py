@@ -17,6 +17,8 @@ from backend_django.core.roles import Role
 from backend_django.groups.models import Group, GroupStatus
 from backend_django.ter.models import (
     MAX_DELIVERABLE_SIZE_BYTES,
+    DeliverableAccessLog,
+    DeliverableAccessType,
     DeliverableType,
     PeriodStatus,
     TERDeliverable,
@@ -493,3 +495,339 @@ class TestFileSizeValidation:
         # Test the validation function directly
         error = validate_file_size(mock_file)
         assert error is None
+
+
+class TestDeadlineValidation:
+    """Tests for deliverable modification deadline validation."""
+
+    @pytest.fixture
+    def expired_ter_period(self, db):
+        """Create a TER period with expired project_end date."""
+        today = date.today()
+        return TERPeriod.objects.create(
+            name="TER Expired",
+            academic_year="2023-2024",
+            status=PeriodStatus.OPEN,
+            group_formation_start=today - timedelta(days=200),
+            group_formation_end=today - timedelta(days=170),
+            subject_selection_start=today - timedelta(days=160),
+            subject_selection_end=today - timedelta(days=130),
+            assignment_date=today - timedelta(days=120),
+            project_start=today - timedelta(days=100),
+            project_end=today - timedelta(days=1),  # Expired yesterday
+            min_group_size=2,
+            max_group_size=4,
+        )
+
+    @pytest.fixture
+    def expired_group(self, db, expired_ter_period, student_user, student_user_2):
+        """Create a group in an expired TER period."""
+        group = Group.objects.create(
+            name="Expired Group",
+            ter_period=expired_ter_period,
+            leader=student_user,
+            status=GroupStatus.FORME,
+        )
+        group.members.add(student_user, student_user_2)
+        return group
+
+    def test_upload_blocked_after_deadline(
+        self, client: Client, student_user, expired_group, small_file
+    ):
+        """Student cannot upload after project deadline."""
+        client.force_login(student_user)
+
+        response = client.post(
+            f"/api/ter/deliverables/upload/{expired_group.id}",
+            data={"file": small_file},
+            format="multipart",
+        )
+
+        assert response.status_code == 400
+        data = response.json()
+        assert "date limite" in data["message"]
+        assert "depassee" in data["message"]
+
+    def test_upload_allowed_for_admin_after_deadline(
+        self, client: Client, admin_user, expired_group, small_file
+    ):
+        """Admin can upload even after project deadline."""
+        client.force_login(admin_user)
+
+        response = client.post(
+            f"/api/ter/deliverables/upload/{expired_group.id}",
+            data={"file": small_file},
+            format="multipart",
+        )
+
+        assert response.status_code == 201
+
+    def test_update_blocked_after_deadline(
+        self, client: Client, student_user, expired_group, expired_ter_period
+    ):
+        """Student cannot update deliverable after project deadline."""
+        # Create a deliverable first
+        deliverable = TERDeliverable.objects.create(
+            ter_period=expired_ter_period,
+            group=expired_group,
+            uploaded_by=student_user,
+            original_filename="report.pdf",
+            content_type="application/pdf",
+            size=1000,
+            upload_status=UploadStatus.COMPLETED,
+        )
+
+        client.force_login(student_user)
+
+        response = client.put(
+            f"/api/ter/deliverables/{deliverable.id}",
+            data={"description": "Updated description"},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert "date limite" in response.json()["message"]
+
+    def test_delete_blocked_after_deadline(
+        self, client: Client, student_user, expired_group, expired_ter_period
+    ):
+        """Student cannot delete deliverable after project deadline."""
+        deliverable = TERDeliverable.objects.create(
+            ter_period=expired_ter_period,
+            group=expired_group,
+            uploaded_by=student_user,
+            original_filename="report.pdf",
+            content_type="application/pdf",
+            size=1000,
+            upload_status=UploadStatus.COMPLETED,
+        )
+
+        client.force_login(student_user)
+
+        response = client.delete(f"/api/ter/deliverables/{deliverable.id}")
+
+        assert response.status_code == 400
+        assert "date limite" in response.json()["message"]
+
+    def test_admin_can_delete_after_deadline(
+        self, client: Client, admin_user, student_user, expired_group, expired_ter_period
+    ):
+        """Admin can delete deliverable after project deadline."""
+        deliverable = TERDeliverable.objects.create(
+            ter_period=expired_ter_period,
+            group=expired_group,
+            uploaded_by=student_user,
+            original_filename="report.pdf",
+            content_type="application/pdf",
+            size=1000,
+            upload_status=UploadStatus.COMPLETED,
+        )
+
+        client.force_login(admin_user)
+
+        response = client.delete(f"/api/ter/deliverables/{deliverable.id}")
+
+        assert response.status_code == 200
+
+    def test_download_still_allowed_after_deadline(
+        self, client: Client, student_user, expired_group, expired_ter_period
+    ):
+        """Download should still work after deadline (read-only operation)."""
+        deliverable = TERDeliverable.objects.create(
+            ter_period=expired_ter_period,
+            group=expired_group,
+            uploaded_by=student_user,
+            original_filename="report.pdf",
+            content_type="application/pdf",
+            size=1000,
+            upload_status=UploadStatus.COMPLETED,
+        )
+
+        client.force_login(student_user)
+
+        # Download should work - it's read-only
+        response = client.get(f"/api/ter/deliverables/{deliverable.id}")
+        assert response.status_code == 200
+
+
+class TestAuditLogging:
+    """Tests for deliverable access audit logging."""
+
+    def test_upload_creates_audit_log(
+        self, client: Client, student_user, formed_group, small_file
+    ):
+        """Uploading a deliverable creates an audit log entry."""
+        client.force_login(student_user)
+
+        response = client.post(
+            f"/api/ter/deliverables/upload/{formed_group.id}",
+            data={"file": small_file},
+            format="multipart",
+        )
+
+        assert response.status_code == 201
+        deliverable_id = response.json()["deliverable_id"]
+
+        # Check audit log was created
+        logs = DeliverableAccessLog.objects.filter(
+            deliverable_id=deliverable_id,
+            access_type=DeliverableAccessType.UPLOAD,
+        )
+        assert logs.count() == 1
+        log = logs.first()
+        assert log.user_email == student_user.email
+        assert log.deliverable_filename == "test_report.pdf"
+
+    def test_update_creates_audit_log(
+        self, client: Client, student_user, formed_group, ter_period
+    ):
+        """Updating a deliverable creates an audit log entry."""
+        deliverable = TERDeliverable.objects.create(
+            ter_period=ter_period,
+            group=formed_group,
+            uploaded_by=student_user,
+            original_filename="report.pdf",
+            content_type="application/pdf",
+            size=1000,
+            upload_status=UploadStatus.COMPLETED,
+        )
+
+        client.force_login(student_user)
+
+        response = client.put(
+            f"/api/ter/deliverables/{deliverable.id}",
+            data={"description": "Updated description"},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+
+        # Check audit log was created
+        logs = DeliverableAccessLog.objects.filter(
+            deliverable=deliverable,
+            access_type=DeliverableAccessType.UPDATE,
+        )
+        assert logs.count() == 1
+        assert "description" in logs.first().details.get("updated_fields", {})
+
+    def test_delete_creates_audit_log(
+        self, client: Client, student_user, formed_group, ter_period
+    ):
+        """Deleting a deliverable creates an audit log entry."""
+        deliverable = TERDeliverable.objects.create(
+            ter_period=ter_period,
+            group=formed_group,
+            uploaded_by=student_user,
+            original_filename="report.pdf",
+            content_type="application/pdf",
+            size=1000,
+            upload_status=UploadStatus.COMPLETED,
+        )
+        deliverable_id = deliverable.id
+
+        client.force_login(student_user)
+
+        response = client.delete(f"/api/ter/deliverables/{deliverable.id}")
+
+        assert response.status_code == 200
+
+        # Check audit log was created (deliverable is null after deletion)
+        logs = DeliverableAccessLog.objects.filter(
+            access_type=DeliverableAccessType.DELETE,
+            deliverable_filename="report.pdf",
+        )
+        assert logs.count() == 1
+        assert logs.first().deliverable is None  # Deliverable was deleted
+
+    def test_view_access_logs_requires_admin(
+        self, client: Client, student_user, formed_group, ter_period
+    ):
+        """Non-admin cannot view access logs."""
+        deliverable = TERDeliverable.objects.create(
+            ter_period=ter_period,
+            group=formed_group,
+            uploaded_by=student_user,
+            original_filename="report.pdf",
+            content_type="application/pdf",
+            size=1000,
+            upload_status=UploadStatus.COMPLETED,
+        )
+
+        client.force_login(student_user)
+
+        response = client.get(f"/api/ter/deliverables/{deliverable.id}/access-logs")
+
+        assert response.status_code == 403
+
+    def test_admin_can_view_access_logs(
+        self, client: Client, admin_user, student_user, formed_group, ter_period
+    ):
+        """Admin can view access logs for a deliverable."""
+        deliverable = TERDeliverable.objects.create(
+            ter_period=ter_period,
+            group=formed_group,
+            uploaded_by=student_user,
+            original_filename="report.pdf",
+            content_type="application/pdf",
+            size=1000,
+            upload_status=UploadStatus.COMPLETED,
+        )
+
+        # Create some log entries
+        DeliverableAccessLog.log_access(
+            deliverable=deliverable,
+            user=student_user,
+            access_type=DeliverableAccessType.DOWNLOAD,
+        )
+
+        client.force_login(admin_user)
+
+        response = client.get(f"/api/ter/deliverables/{deliverable.id}/access-logs")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["access_type"] == "download"
+
+    def test_admin_can_view_group_access_logs(
+        self, client: Client, admin_user, student_user, formed_group, ter_period
+    ):
+        """Admin can view access logs for all deliverables in a group."""
+        deliverable1 = TERDeliverable.objects.create(
+            ter_period=ter_period,
+            group=formed_group,
+            uploaded_by=student_user,
+            original_filename="report1.pdf",
+            content_type="application/pdf",
+            size=1000,
+            upload_status=UploadStatus.COMPLETED,
+        )
+        deliverable2 = TERDeliverable.objects.create(
+            ter_period=ter_period,
+            group=formed_group,
+            uploaded_by=student_user,
+            original_filename="report2.pdf",
+            content_type="application/pdf",
+            size=2000,
+            upload_status=UploadStatus.COMPLETED,
+        )
+
+        # Create log entries
+        DeliverableAccessLog.log_access(
+            deliverable=deliverable1,
+            user=student_user,
+            access_type=DeliverableAccessType.DOWNLOAD,
+        )
+        DeliverableAccessLog.log_access(
+            deliverable=deliverable2,
+            user=student_user,
+            access_type=DeliverableAccessType.DOWNLOAD,
+        )
+
+        client.force_login(admin_user)
+
+        response = client.get(f"/api/ter/deliverables/group/{formed_group.id}/access-logs")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2

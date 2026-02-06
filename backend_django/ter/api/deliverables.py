@@ -5,6 +5,7 @@ Handles file uploads and downloads for TER group deliverables.
 Supports async uploads for large files via Celery.
 """
 
+from datetime import date
 from uuid import UUID
 
 from django.conf import settings
@@ -25,12 +26,15 @@ from backend_django.core.roles import is_ter_admin
 from backend_django.groups.models import Group, GroupStatus
 from backend_django.ter.models import (
     MAX_DELIVERABLE_SIZE_BYTES,
+    DeliverableAccessLog,
+    DeliverableAccessType,
     DeliverableType,
     TERDeliverable,
     TERPeriod,
     UploadStatus,
 )
 from backend_django.ter.schemas.deliverables import (
+    DeliverableAccessLogSchema,
     FILE_SIZE_LIMIT_MB,
     TERDeliverableListSchema,
     TERDeliverableSchema,
@@ -49,6 +53,14 @@ def validate_file_size(file: UploadedFile) -> str | None:
     if file.size > MAX_DELIVERABLE_SIZE_BYTES:
         return f"Fichier trop volumineux - max {FILE_SIZE_LIMIT_MB}MB (taille: {file.size / (1024*1024):.1f}MB)"
     return None
+
+
+def is_past_deliverable_deadline(ter_period: TERPeriod) -> bool:
+    """
+    Check if the deliverable modification deadline has passed.
+    Uses project_end as the deadline for deliverable modifications.
+    """
+    return date.today() > ter_period.project_end
 
 
 def get_user_group_for_period(user, ter_period: TERPeriod) -> Group | None:
@@ -109,6 +121,13 @@ class TERDeliverablesController(BaseAPI):
                 "Ce groupe n'est pas associe a une periode TER."
             ).to_response()
 
+        # Check deadline (admins can bypass)
+        if is_past_deliverable_deadline(group.ter_period) and not is_ter_admin(request.user):
+            return BadRequestError(
+                f"La date limite de soumission des livrables est depassee "
+                f"(fin du projet: {group.ter_period.project_end.strftime('%d/%m/%Y')})."
+            ).to_response()
+
         # Validate file
         if not file:
             return BadRequestError("Aucun fichier fourni.").to_response()
@@ -138,6 +157,19 @@ class TERDeliverablesController(BaseAPI):
             description=description,
             is_confidential=is_confidential,
             upload_status=UploadStatus.COMPLETED,
+        )
+
+        # Log upload access
+        DeliverableAccessLog.log_access(
+            deliverable=deliverable,
+            user=request.user,
+            access_type=DeliverableAccessType.UPLOAD,
+            request=request,
+            details={
+                "size": file.size,
+                "content_type": file.content_type,
+                "deliverable_type": deliverable_type,
+            },
         )
 
         return 201, TERDeliverableUploadResponse(
@@ -256,6 +288,14 @@ class TERDeliverablesController(BaseAPI):
                 f"Le fichier n'est pas encore disponible (statut: {deliverable.upload_status})."
             ).to_response()
 
+        # Log download access
+        DeliverableAccessLog.log_access(
+            deliverable=deliverable,
+            user=request.user,
+            access_type=DeliverableAccessType.DOWNLOAD,
+            request=request,
+        )
+
         # If using S3/MinIO, generate presigned URL
         if getattr(settings, "USE_S3_STORAGE", False):
             import boto3
@@ -339,6 +379,13 @@ class TERDeliverablesController(BaseAPI):
                 "Vous n'avez pas les droits pour modifier ce livrable."
             ).to_response()
 
+        # Check deadline (admins can bypass)
+        if is_past_deliverable_deadline(deliverable.ter_period) and not is_ter_admin(request.user):
+            return BadRequestError(
+                f"La date limite de modification des livrables est depassee "
+                f"(fin du projet: {deliverable.ter_period.project_end.strftime('%d/%m/%Y')})."
+            ).to_response()
+
         if data.deliverable_type is not None:
             valid_types = [t.value for t in DeliverableType]
             if data.deliverable_type not in valid_types:
@@ -354,6 +401,19 @@ class TERDeliverablesController(BaseAPI):
             deliverable.is_confidential = data.is_confidential
 
         deliverable.save()
+
+        # Log update access
+        DeliverableAccessLog.log_access(
+            deliverable=deliverable,
+            user=request.user,
+            access_type=DeliverableAccessType.UPDATE,
+            request=request,
+            details={
+                "updated_fields": {
+                    k: v for k, v in data.dict().items() if v is not None
+                },
+            },
+        )
 
         return 200, TERDeliverableSchema(
             id=deliverable.id,
@@ -374,7 +434,7 @@ class TERDeliverablesController(BaseAPI):
 
     @http_delete(
         "/{deliverable_id}",
-        response={200: dict, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        response={200: dict, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
         url_name="ter_deliverables_delete",
     )
     def delete_deliverable(self, request: HttpRequest, deliverable_id: UUID):
@@ -389,7 +449,26 @@ class TERDeliverablesController(BaseAPI):
                 "Vous n'avez pas les droits pour supprimer ce livrable."
             ).to_response()
 
+        # Check deadline (admins can bypass)
+        if is_past_deliverable_deadline(deliverable.ter_period) and not is_ter_admin(request.user):
+            return BadRequestError(
+                f"La date limite de modification des livrables est depassee "
+                f"(fin du projet: {deliverable.ter_period.project_end.strftime('%d/%m/%Y')})."
+            ).to_response()
+
         filename = deliverable.original_filename
+
+        # Log delete access BEFORE deletion
+        DeliverableAccessLog.log_access(
+            deliverable=deliverable,
+            user=request.user,
+            access_type=DeliverableAccessType.DELETE,
+            request=request,
+            details={
+                "size": deliverable.size,
+                "content_type": deliverable.content_type,
+            },
+        )
 
         # Delete file from storage
         if deliverable.file:
@@ -398,3 +477,89 @@ class TERDeliverablesController(BaseAPI):
         deliverable.delete()
 
         return 200, {"success": True, "message": f"Livrable '{filename}' supprime."}
+
+    @http_get(
+        "/{deliverable_id}/access-logs",
+        response={200: list[DeliverableAccessLogSchema], 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="ter_deliverables_access_logs",
+    )
+    def get_deliverable_access_logs(
+        self, request: HttpRequest, deliverable_id: UUID, limit: int = 50
+    ):
+        """
+        Get access logs for a specific deliverable.
+
+        Only admins can view access logs.
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        if not is_ter_admin(request.user):
+            return PermissionDeniedError(
+                "Seuls les administrateurs peuvent consulter les logs d'acces."
+            ).to_response()
+
+        deliverable = get_object_or_404(TERDeliverable, id=deliverable_id)
+
+        logs = DeliverableAccessLog.objects.filter(
+            deliverable=deliverable
+        ).order_by("-created")[:limit]
+
+        return 200, [
+            DeliverableAccessLogSchema(
+                id=log.id,
+                deliverable_id=log.deliverable_id,
+                deliverable_filename=log.deliverable_filename,
+                deliverable_group_name=log.deliverable_group_name,
+                user_id=log.user_id,
+                user_email=log.user_email,
+                access_type=log.access_type,
+                ip_address=log.ip_address,
+                details=log.details,
+                created=log.created,
+            )
+            for log in logs
+        ]
+
+    @http_get(
+        "/group/{group_id}/access-logs",
+        response={200: list[DeliverableAccessLogSchema], 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="ter_group_deliverables_access_logs",
+    )
+    def get_group_deliverables_access_logs(
+        self, request: HttpRequest, group_id: UUID, limit: int = 100
+    ):
+        """
+        Get access logs for all deliverables in a group.
+
+        Only admins can view access logs.
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        if not is_ter_admin(request.user):
+            return PermissionDeniedError(
+                "Seuls les administrateurs peuvent consulter les logs d'acces."
+            ).to_response()
+
+        group = get_object_or_404(Group, id=group_id)
+
+        logs = DeliverableAccessLog.objects.filter(
+            deliverable__group=group
+        ).order_by("-created")[:limit]
+
+        return 200, [
+            DeliverableAccessLogSchema(
+                id=log.id,
+                deliverable_id=log.deliverable_id,
+                deliverable_filename=log.deliverable_filename,
+                deliverable_group_name=log.deliverable_group_name,
+                user_id=log.user_id,
+                user_email=log.user_email,
+                access_type=log.access_type,
+                ip_address=log.ip_address,
+                details=log.details,
+                created=log.created,
+            )
+            for log in logs
+        ]

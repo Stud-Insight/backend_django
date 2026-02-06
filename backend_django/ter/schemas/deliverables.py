@@ -88,6 +88,21 @@ class UploadStatusResponse(Schema):
     is_complete: bool
 
 
+class DeliverableAccessLogSchema(Schema):
+    """Schema for deliverable access log entries."""
+
+    id: UUID
+    deliverable_id: UUID | None
+    deliverable_filename: str
+    deliverable_group_name: str
+    user_id: UUID | None
+    user_email: str
+    access_type: str
+    ip_address: str | None
+    details: dict
+    created: datetime
+
+
 # Constants exposed for API documentation
 FILE_SIZE_LIMIT_MB = MAX_DELIVERABLE_SIZE_BYTES // (1024 * 1024)
 FILE_SIZE_LIMIT_BYTES = MAX_DELIVERABLE_SIZE_BYTES

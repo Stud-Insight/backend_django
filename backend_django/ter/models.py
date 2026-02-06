@@ -580,3 +580,134 @@ class TERDeliverable(BaseModel):
         if user.is_staff or user.is_superuser:
             return True
         return False
+
+
+class DeliverableAccessType(models.TextChoices):
+    """Types of deliverable access operations."""
+
+    UPLOAD = "upload", _("Telechargement")
+    DOWNLOAD = "download", _("Telechargement")
+    UPDATE = "update", _("Modification")
+    DELETE = "delete", _("Suppression")
+    VIEW = "view", _("Consultation")
+
+
+class DeliverableAccessLog(BaseModel):
+    """
+    Audit log for deliverable access operations.
+
+    Tracks all access to deliverables for security and compliance purposes.
+    """
+
+    deliverable = models.ForeignKey(
+        TERDeliverable,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="access_logs",
+        verbose_name=_("deliverable"),
+        help_text=_("The deliverable that was accessed (null if deleted)"),
+    )
+    deliverable_filename = models.CharField(
+        _("filename"),
+        max_length=255,
+        help_text=_("Preserved filename for audit after deliverable deletion"),
+    )
+    deliverable_group_name = models.CharField(
+        _("group name"),
+        max_length=200,
+        blank=True,
+        help_text=_("Preserved group name for audit"),
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="deliverable_access_logs",
+        verbose_name=_("user"),
+    )
+    user_email = models.EmailField(
+        _("user email"),
+        help_text=_("Preserved email for audit after user deletion"),
+    )
+
+    access_type = models.CharField(
+        _("access type"),
+        max_length=20,
+        choices=DeliverableAccessType.choices,
+    )
+
+    ip_address = models.GenericIPAddressField(
+        _("IP address"),
+        null=True,
+        blank=True,
+    )
+    user_agent = models.TextField(
+        _("user agent"),
+        blank=True,
+    )
+
+    details = models.JSONField(
+        _("details"),
+        default=dict,
+        blank=True,
+        help_text=_("Additional context about the operation"),
+    )
+
+    class Meta:
+        verbose_name = _("deliverable access log")
+        verbose_name_plural = _("deliverable access logs")
+        ordering = ["-created"]
+        indexes = [
+            models.Index(fields=["deliverable", "-created"]),
+            models.Index(fields=["user", "-created"]),
+            models.Index(fields=["access_type", "-created"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.access_type} - {self.deliverable_filename} by {self.user_email}"
+
+    @classmethod
+    def log_access(
+        cls,
+        deliverable: TERDeliverable,
+        user,
+        access_type: str,
+        request=None,
+        details: dict | None = None,
+    ) -> "DeliverableAccessLog":
+        """
+        Create an audit log entry for deliverable access.
+
+        Args:
+            deliverable: The deliverable being accessed
+            user: The user performing the action
+            access_type: Type of access (upload, download, update, delete, view)
+            request: HTTP request object (for IP and user agent)
+            details: Additional context dictionary
+        """
+        ip_address = None
+        user_agent = ""
+
+        if request:
+            # Get IP address
+            x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+            if x_forwarded_for:
+                ip_address = x_forwarded_for.split(",")[0].strip()
+            else:
+                ip_address = request.META.get("REMOTE_ADDR")
+
+            user_agent = request.META.get("HTTP_USER_AGENT", "")
+
+        return cls.objects.create(
+            deliverable=deliverable if access_type != DeliverableAccessType.DELETE else None,
+            deliverable_filename=deliverable.original_filename,
+            deliverable_group_name=deliverable.group.name if deliverable.group else "",
+            user=user,
+            user_email=user.email,
+            access_type=access_type,
+            ip_address=ip_address,
+            user_agent=user_agent[:500] if user_agent else "",  # Truncate long user agents
+            details=details or {},
+        )
