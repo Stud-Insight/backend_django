@@ -52,8 +52,10 @@ def subject_to_list_schema(subject: TERSubject) -> TERSubjectListSchema:
     return TERSubjectListSchema(
         id=subject.id,
         title=subject.title,
+        description=subject.description,
         domain=subject.domain,
         tags=subject.tags or [],
+        taches=subject.taches or [],
         professor=user_to_minimal_schema(subject.professor),
         status=subject.status,
         max_groups=subject.max_groups,
@@ -72,6 +74,7 @@ def subject_to_detail_schema(subject: TERSubject, is_favorite: bool = False) -> 
         description=subject.description,
         domain=subject.domain,
         tags=subject.tags or [],
+        taches=subject.taches or [],
         prerequisites=subject.prerequisites,
         professor=user_to_minimal_schema(subject.professor),
         supervisor=user_to_minimal_schema(subject.supervisor),
@@ -271,6 +274,7 @@ class TERSubjectController(BaseAPI):
             description=data.description,
             domain=data.domain,
             tags=data.tags or [],
+            taches=data.taches or [],
             prerequisites=data.prerequisites,
             professor=request.user,
             supervisor=supervisor,
@@ -328,6 +332,8 @@ class TERSubjectController(BaseAPI):
             subject.domain = data.domain
         if data.tags is not None:
             subject.tags = data.tags
+        if data.taches is not None:
+            subject.taches = data.taches
         if data.prerequisites is not None:
             subject.prerequisites = data.prerequisites
         if data.supervisor_id is not None:

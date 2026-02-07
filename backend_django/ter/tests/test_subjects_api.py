@@ -548,3 +548,93 @@ class TestSubjectTags:
         assert data["count"] >= 1
         subject_data = next(s for s in data["results"] if s["domain"] == "Mobile")
         assert subject_data["tags"] == ["Flutter", "Dart"]
+
+
+class TestSubjectTaches:
+    """Tests for TER subject taches field."""
+
+    def test_create_subject_with_taches(self, client: Client, encadrant_user):
+        """Encadrant can create a subject with taches."""
+        client.force_login(encadrant_user)
+
+        response = client.post(
+            "/api/ter/subjects/",
+            data={
+                "title": "Sujet avec des taches",
+                "description": "Une description detaillee du sujet de recherche qui fait plus de 50 caracteres.",
+                "domain": "Web",
+                "taches": ["Analyser les besoins", "Concevoir l'architecture", "Implementer"],
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["taches"] == ["Analyser les besoins", "Concevoir l'architecture", "Implementer"]
+
+    def test_create_subject_without_taches_defaults_to_empty(self, client: Client, encadrant_user):
+        """Creating a subject without taches results in empty list."""
+        client.force_login(encadrant_user)
+
+        response = client.post(
+            "/api/ter/subjects/",
+            data={
+                "title": "Sujet sans taches specifiques",
+                "description": "Une description detaillee du sujet de recherche qui fait plus de 50 caracteres.",
+                "domain": "IA/ML",
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["taches"] == []
+
+    def test_update_subject_taches(self, client: Client, encadrant_user):
+        """Encadrant can update taches on an existing subject."""
+        client.force_login(encadrant_user)
+
+        subject = TERSubject.objects.create(
+            ter_period=None,
+            title="Sujet a modifier taches",
+            description="Description longue pour passer la validation minimale de 50 caracteres.",
+            domain="Securite",
+            taches=["Tache initiale"],
+            professor=encadrant_user,
+            status=SubjectStatus.DRAFT,
+        )
+
+        response = client.put(
+            f"/api/ter/subjects/{subject.id}",
+            data={
+                "taches": ["Nouvelle tache 1", "Nouvelle tache 2"],
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["taches"] == ["Nouvelle tache 1", "Nouvelle tache 2"]
+
+    def test_list_subjects_returns_description_and_taches(self, client: Client, encadrant_user):
+        """GET subjects list returns description and taches in each item."""
+        client.force_login(encadrant_user)
+
+        TERSubject.objects.create(
+            ter_period=None,
+            title="Sujet liste complet",
+            description="Description longue pour passer la validation minimale de 50 caracteres.",
+            domain="Backend",
+            tags=["Python"],
+            taches=["Tache A", "Tache B"],
+            professor=encadrant_user,
+            status=SubjectStatus.DRAFT,
+        )
+
+        response = client.get("/api/ter/subjects/me")
+
+        assert response.status_code == 200
+        data = response.json()
+        subject_data = next(s for s in data["results"] if s["domain"] == "Backend")
+        assert subject_data["description"] == "Description longue pour passer la validation minimale de 50 caracteres."
+        assert subject_data["taches"] == ["Tache A", "Tache B"]

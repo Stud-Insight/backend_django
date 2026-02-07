@@ -193,6 +193,13 @@ class TERSubject(BaseModel):
         verbose_name=_("tags"),
         help_text=_("Technology tags, e.g., ['Python', 'React', 'PostgreSQL']"),
     )
+    taches = ArrayField(
+        models.CharField(max_length=200),
+        default=list,
+        blank=True,
+        verbose_name=_("taches"),
+        help_text=_("Task list for the project"),
+    )
     prerequisites = models.TextField(
         _("prerequisites"),
         blank=True,
