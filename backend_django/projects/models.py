@@ -235,6 +235,14 @@ class AcademicProject(BaseModel):
         related_name="admin_validated_projects",
         verbose_name=_("validated by"),
     )
+    conversation = models.OneToOneField(
+        Conversation,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="project",
+        verbose_name=_("conversation"),
+        )
 
     class Meta:
         verbose_name = _("academic project")
@@ -402,3 +410,23 @@ class ProposalApplication(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.applicant} - {self.proposal.title}"
+
+@receiver(post_save, sender=AcademicProject)
+def create_project_conversation(sender, instance, created, **kwargs):
+    """Crée automatiquement une conversation quand un projet est créé."""
+    if created and not instance.conversation:
+        conv = Conversation.objects.create(
+            name=f"Chat: {instance.subject}",
+            is_group=True
+        )
+        
+        participants = [instance.student]
+        if instance.referent:
+            participants.append(instance.referent)
+        if instance.supervisor:
+            participants.append(instance.supervisor)
+        
+        conv.participants.add(*participants)
+        
+        instance.conversation = conv
+        instance.save()
