@@ -36,6 +36,7 @@ from .rankings import (
     TERRankingItemSchema,
     TERRankingListSchema,
 )
+from .student import MyTERSchema
 from .subjects import (
     TERFavoriteSchema,
     TERSubjectCreateSchema,
@@ -84,4 +85,6 @@ __all__ = [
     "UploadStatusResponse",
     "FILE_SIZE_LIMIT_MB",
     "FILE_SIZE_LIMIT_BYTES",
+    # Student
+    "MyTERSchema",
 ]

@@ -5,6 +5,7 @@ from .deliverables import TERDeliverablesController
 from .grading import TERGradingController, TERPeerReviewController
 from .periods import TERPeriodController
 from .rankings import TERRankingController
+from .student import TERStudentController
 from .subjects import TERSubjectController
 
 __all__ = [
@@ -15,4 +16,5 @@ __all__ = [
     "TERDeliverablesController",
     "TERGradingController",
     "TERPeerReviewController",
+    "TERStudentController",
 ]
