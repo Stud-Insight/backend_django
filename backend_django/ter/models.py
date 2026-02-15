@@ -144,6 +144,24 @@ class TERPeriod(BaseModel):
         help_text=_("Students registered for this TER period"),
     )
 
+    professors = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        related_name="ter_periods_as_professor",
+        blank=True,
+        verbose_name=_("professors"),
+        help_text=_("Professors/encadrants participating in this TER period"),
+    )
+
+    manager = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ter_periods_as_responsable",
+        verbose_name=_("responsable TER"),
+        help_text=_("Main responsible for this TER period"),
+    )
+
     class Meta:
         verbose_name = _("TER period")
         verbose_name_plural = _("TER periods")

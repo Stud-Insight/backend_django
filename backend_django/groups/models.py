@@ -49,12 +49,20 @@ class Group(BaseModel):
         help_text=_("Group name chosen by the leader"),
     )
 
+    max_group_size = models.PositiveIntegerField(
+        _("maximum group size"),
+        null=True,
+        blank=True,
+        help_text=_("Maximum number of members allowed in this group. Null means unlimited."),
+    )
+
     leader = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name="led_groups",
+        null=True,
+        blank=True,
         verbose_name=_("leader"),
-        help_text=_("The student who created and leads the group"),
     )
 
     members = models.ManyToManyField(
@@ -136,12 +144,7 @@ class Group(BaseModel):
         return f"{self.name} ({self.get_status_display()})"
 
     def save(self, *args, **kwargs):
-        """Ensure leader is always in members and auto-form if min_group_size reached."""
         super().save(*args, **kwargs)
-        if self.leader and not self.members.filter(id=self.leader_id).exists():
-            self.members.add(self.leader)
-            # Check if we should auto-form after adding leader
-            self.check_and_auto_form()
 
     def check_and_auto_form(self):
         """
@@ -259,28 +262,17 @@ class Group(BaseModel):
             old_subject.title if old_subject else None,
         )
 
-    def admin_add_member(self, user):
+    def can_add_member(self) -> bool:
         """
-        Admin-only: Add a member to the group bypassing status checks.
-
-        Args:
-            user: User instance to add
-
-        Raises:
-            ValueError: If max_group_size would be exceeded
+        Check if new members can be added to the group.
         """
-        if self.ter_period and self.ter_period.max_group_size:
-            if self.member_count >= self.ter_period.max_group_size:
-                raise ValueError(
-                    f"Cannot add member: group already at max size ({self.ter_period.max_group_size})"
-                )
+        if self.status != GroupStatus.OUVERT:
+            return False
 
-        self.members.add(user)
-        logger.info(
-            "ADMIN-OVERRIDE: Added member %s to group '%s'",
-            user.email,
-            self.name,
-        )
+        if self.max_group_size:
+            return self.members.count() < self.max_group_size
+
+        return True
 
     def admin_remove_member(self, user):
         """
@@ -322,8 +314,11 @@ class Group(BaseModel):
             return False
 
         # Check group size limits (only TER periods have max_group_size)
-        if self.ter_period and self.ter_period.max_group_size:
-            return self.members.count() < self.ter_period.max_group_size
+        if self.max_group_size:
+            if self.member_count >= self.max_group_size:
+                raise ValueError(
+                    f"Cannot add member: group already at max size ({self.max_group_size})"
+                )
 
         return True
 
@@ -343,7 +338,8 @@ class Group(BaseModel):
         return self.members.filter(id=user.id).exists()
 
     def is_leader(self, user) -> bool:
-        """Check if user is the leader of this group."""
+        if not self.leader_id:
+            return False
         return self.leader_id == user.id
 
     def get_period(self):

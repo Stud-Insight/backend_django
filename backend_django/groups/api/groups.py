@@ -8,8 +8,9 @@ from uuid import UUID
 
 from django.db.models import Count, Q
 from django.http import HttpRequest
+from django.db import transaction
 from django.shortcuts import get_object_or_404
-from ninja_extra import api_controller, http_get, http_post
+from ninja_extra import api_controller, http_get, http_post, http_delete, http_put
 
 from backend_django.core.api import BaseAPI, IsAuthenticated
 from backend_django.core.exceptions import (
@@ -28,6 +29,8 @@ from backend_django.groups.schemas.groups import (
     GroupCreateSchema,
     GroupDetailSchema,
     GroupListSchema,
+    AddMemberSchema,
+    GroupUpdateSchema,
     InvitationCreateSchema,
     InvitationResponseSchema,
     InvitationSchema,
@@ -72,12 +75,15 @@ def stage_period_to_schema(period: StagePeriod) -> StagePeriodSchema:
 
 
 def group_to_list_schema(group: Group) -> GroupListSchema:
-    """Convert Group to list schema."""
+    members = [UserMinimalSchema.from_user(m) for m in group.members.all()]
+
     return GroupListSchema(
         id=group.id,
         name=group.name,
-        leader=UserMinimalSchema.from_user(group.leader),
+        leader=UserMinimalSchema.from_user(group.leader) if group.leader else None,
+        members=members,
         member_count=group.member_count,
+        max_group_size=group.max_group_size,
         status=group.status,
         project_type=group.project_type,
         created=group.created,
@@ -90,10 +96,11 @@ def group_to_detail_schema(group: Group) -> GroupDetailSchema:
     return GroupDetailSchema(
         id=group.id,
         name=group.name,
-        leader=UserMinimalSchema.from_user(group.leader),
+        leader=UserMinimalSchema.from_user(group.leader) if group.leader else None,
         member_count=group.member_count,
         status=group.status,
         project_type=group.project_type,
+        max_group_size=group.max_group_size,
         created=group.created,
         members=members,
         ter_period=ter_period_to_schema(group.ter_period) if group.ter_period else None,
@@ -208,87 +215,136 @@ class GroupController(BaseAPI):
 
         return 200, group_to_detail_schema(group)
 
+    @http_put(
+        "/{group_id}",
+        response={
+            200: GroupDetailSchema,
+            400: ErrorSchema,
+            401: ErrorSchema,
+            403: ErrorSchema,
+            404: ErrorSchema,
+        },
+        url_name="groups_update",
+    )
+    def update_group(self, request: HttpRequest, group_id: UUID, data: GroupUpdateSchema):
+        """
+        Update group name and max group size.
+
+        Only leader or TER admin can update.
+        Cannot update a closed group.
+        """
+
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        group = get_object_or_404(
+            Group.objects.select_related("leader", "ter_period", "stage_period")
+            .prefetch_related("members"),
+            id=group_id,
+        )
+
+        # Permission check
+        if not group.is_leader(request.user) and not is_ter_admin(request.user):
+            return PermissionDeniedError(
+                "Seul le leader ou un administrateur peut modifier le groupe."
+            ).to_response()
+
+        # Cannot update closed group
+        if group.status == GroupStatus.CLOTURE:
+            return BadRequestError(
+                "Impossible de modifier un groupe clôturé."
+            ).to_response()
+
+        # Update name
+        if data.name is not None:
+            group.name = data.name
+
+        # Update max group size
+        if data.max_group_size is not None:
+            if data.max_group_size < group.member_count:
+                return BadRequestError(
+                    f"La taille maximale ({data.max_group_size}) est inférieure "
+                    f"au nombre actuel de membres ({group.member_count})."
+                ).to_response()
+
+            group.max_group_size = data.max_group_size
+
+        group.save()
+        group.refresh_from_db()
+
+        return 200, group_to_detail_schema(group)
+
     @http_post(
         "/",
         response={201: GroupDetailSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema},
         url_name="groups_create",
     )
     def create_group(self, request: HttpRequest, data: GroupCreateSchema):
-        """
-        Create a new group for TER.
 
-        The current user becomes the leader and first member.
-        Requires an active TER period in formation phase.
-        """
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        # Validate that exactly one period is specified
         if data.ter_period_id and data.stage_period_id:
-            return BadRequestError("Spécifiez soit une période TER soit une période Stage, pas les deux.").to_response()
+            return BadRequestError(
+                "Spécifiez soit une période TER soit une période Stage, pas les deux."
+            ).to_response()
 
         if not data.ter_period_id and not data.stage_period_id:
-            return BadRequestError("Vous devez spécifier une période TER ou Stage.").to_response()
+            return BadRequestError(
+                "Vous devez spécifier une période TER ou Stage."
+            ).to_response()
 
         ter_period = None
         stage_period = None
         project_type = None
 
         if data.ter_period_id:
-            # TER group creation
-            ter_period = TERPeriod.objects.filter(id=data.ter_period_id).first()
-            if not ter_period:
-                return NotFoundError("Période TER non trouvée.").to_response()
-
-            # Check period is open
-            if ter_period.status != PeriodStatus.OPEN:
-                return BadRequestError("La période TER n'est pas ouverte.").to_response()
-
-            # Check we're in formation phase
-            today = date.today()
-            if not (ter_period.group_formation_start <= today <= ter_period.group_formation_end):
-                return BadRequestError("La période de formation des groupes est terminée.").to_response()
-
-            # Check user doesn't already lead a group for this period
-            existing_group = Group.objects.filter(
-                leader=request.user,
-                ter_period=ter_period,
-            ).first()
-            if existing_group:
-                return BadRequestError("Vous êtes déjà leader d'un groupe pour cette période TER.").to_response()
-
+            ter_period = get_object_or_404(TERPeriod, id=data.ter_period_id)
             project_type = "TER"
 
         elif data.stage_period_id:
-            # Stage group creation
-            stage_period = StagePeriod.objects.filter(id=data.stage_period_id).first()
-            if not stage_period:
-                return NotFoundError("Période Stage non trouvée.").to_response()
-
-            # Check period is open
-            if stage_period.status != PeriodStatus.OPEN:
-                return BadRequestError("La période Stage n'est pas ouverte.").to_response()
-
-            # Check user doesn't already lead a group for this period
-            existing_group = Group.objects.filter(
-                leader=request.user,
-                stage_period=stage_period,
-            ).first()
-            if existing_group:
-                return BadRequestError("Vous êtes déjà leader d'un groupe pour cette période Stage.").to_response()
-
+            stage_period = get_object_or_404(StagePeriod, id=data.stage_period_id)
             project_type = "Stage"
 
-        # Create the group
-        group = Group.objects.create(
-            name=data.name,
-            leader=request.user,
-            project_type=project_type,
-            ter_period=ter_period,
-            stage_period=stage_period,
-        )
+        try:
+            with transaction.atomic():
 
-        # Reload with related data
+                # 1️⃣ Create group
+                group = Group.objects.create(
+                    name=data.name,
+                    project_type=project_type,
+                    ter_period=ter_period,
+                    stage_period=stage_period,
+                    max_group_size=data.max_group_size,
+                )
+
+                # Leader automatically added in save()
+
+                # 2️⃣ Add extra members
+                for user_id in data.member_ids:
+
+                    if user_id == request.user.id:
+                        continue  # Skip leader (already added)
+
+                    user = get_object_or_404(User, id=user_id)
+
+                    if group.is_member(user):
+                        continue
+
+                    group.members.add(user)
+
+                    if not group.can_add_member():
+                        raise ValueError(
+                            f"Groupe plein (max {group.max_group_size})"
+                        )
+
+                    if not group.leader:
+                        group.leader = user
+                        group.save(update_fields=["leader"])
+
+        except ValueError as e:
+            return BadRequestError(str(e)).to_response()
+
         group = Group.objects.select_related(
             "leader", "ter_period", "stage_period"
         ).prefetch_related("members").get(id=group.id)
@@ -559,9 +615,12 @@ class GroupController(BaseAPI):
             id=group_id,
         )
 
-        # Check user is the leader
-        if not group.is_leader(request.user):
-            return PermissionDeniedError("Seul le leader peut transferer le leadership.").to_response()
+        if not group.is_leader(request.user) and not is_ter_admin(request.user):
+            return PermissionDeniedError(
+                "Seul le leader ou un administrateur peut transferer le leadership."
+            ).to_response()
+
+        new_leader = get_object_or_404(User, id=data.new_leader_id)
 
         # Find the new leader
         new_leader = User.objects.filter(id=data.new_leader_id).first()
@@ -785,3 +844,142 @@ class GroupController(BaseAPI):
         ).select_related("leader")
 
         return 200, [group_to_list_schema(g) for g in incomplete_groups]
+
+    @http_get(
+        "/{group_id}/members",
+        response={200: list[UserMinimalSchema], 401: ErrorSchema, 404: ErrorSchema},
+        url_name="groups_members_list",
+    )
+    def list_members(self, request: HttpRequest, group_id: UUID):
+        """
+        List members of a group.
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        group = get_object_or_404(
+            Group.objects.prefetch_related("members"),
+            id=group_id,
+        )
+
+        members = group.members.all()
+
+        return 200, [UserMinimalSchema.from_user(user) for user in members]
+
+    @http_post(
+        "/{group_id}/members",
+        response={200: GroupDetailSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="groups_members_add",
+    )
+    def add_member(self, request: HttpRequest, group_id: UUID, data: AddMemberSchema):
+
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        if not is_ter_admin(request.user):
+            return PermissionDeniedError("Reserve au personnel.").to_response()
+
+        group = get_object_or_404(
+            Group.objects.select_related("leader", "ter_period", "stage_period")
+            .prefetch_related("members"),
+            id=group_id,
+        )
+
+        user = get_object_or_404(User, id=data.user_id)
+
+        if group.is_member(user):
+            return BadRequestError("Cet utilisateur est deja membre du groupe.").to_response()
+
+        group.members.add(user)
+
+        if not group.can_add_member():
+            return BadRequestError(
+                f"Groupe plein (max {group.max_group_size})"
+            ).to_response()
+
+        if not group.leader:
+            group.leader = user
+            group.save(update_fields=["leader"])
+
+        group = Group.objects.select_related(
+            "leader", "ter_period", "stage_period"
+        ).prefetch_related("members").get(id=group.id)
+
+        return 200, group_to_detail_schema(group)
+
+    @http_delete(
+        "/{group_id}",
+        response={200: MessageSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="groups_delete",
+    )
+    def delete_group(self, request: HttpRequest, group_id: UUID):
+
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        group = get_object_or_404(Group, id=group_id)
+
+        # Only leader or TER admin can delete
+        if not group.is_leader(request.user) and not is_ter_admin(request.user):
+            return PermissionDeniedError(
+                "Seul le leader ou un administrateur peut supprimer le groupe."
+            ).to_response()
+
+        group.delete()
+
+        return 200, MessageSchema(
+            success=True,
+            message="Groupe supprimé avec succès."
+        )
+
+    @http_delete(
+        "/{group_id}/members/{user_id}",
+        response={200: GroupDetailSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="groups_member_remove",
+    )
+    def remove_member(self, request: HttpRequest, group_id: UUID, user_id: UUID):
+
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        group = get_object_or_404(
+            Group.objects.select_related("leader", "ter_period", "stage_period")
+            .prefetch_related("members"),
+            id=group_id,
+        )
+
+        user = get_object_or_404(User, id=user_id)
+
+        # Only leader or admin
+        if not group.is_leader(request.user) and not is_ter_admin(request.user):
+            return PermissionDeniedError(
+                "Seul le leader ou un administrateur peut retirer un membre."
+            ).to_response()
+
+        # Cannot remove leader
+        if user.id == group.leader_id:
+            return BadRequestError(
+                "Impossible de retirer le leader du groupe."
+            ).to_response()
+
+        if not group.is_member(user):
+            return BadRequestError(
+                "Cet utilisateur n'est pas membre du groupe."
+            ).to_response()
+
+        # If group is closed and not admin → block
+        if group.status == GroupStatus.CLOTURE and not is_ter_admin(request.user):
+            return BadRequestError(
+                "Impossible de modifier un groupe clôturé."
+            ).to_response()
+
+        group.members.remove(user)
+
+        # Auto-reopen if needed
+        if group.status == GroupStatus.FORME and group.member_count < 2:
+            group.reopen_group()
+            group.save()
+
+        group.refresh_from_db()
+
+        return 200, group_to_detail_schema(group)

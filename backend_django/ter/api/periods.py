@@ -574,7 +574,6 @@ class TERPeriodController(BaseAPI):
         )
 
     # ==================== Students Management ====================
-
     @http_get(
         "/{period_id}/students",
         response={200: PaginatedResponseSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
@@ -605,11 +604,17 @@ class TERPeriodController(BaseAPI):
         )
 
     @http_post(
-        "/{period_id}/students",
-        response={201: UserMinimalSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema, 409: ErrorSchema},
+        "/{period_id}/students/{user_id}",
+        response={
+            201: UserMinimalSchema,
+            401: ErrorSchema,
+            403: ErrorSchema,
+            404: ErrorSchema,
+            409: ErrorSchema,
+        },
         url_name="ter_periods_students_add",
     )
-    def add_student(self, request: HttpRequest, period_id: UUID, data: AddStudentSchema):
+    def add_student(self, request: HttpRequest, period_id: UUID, user_id: UUID):
         """
         Add a student to a TER period.
 
@@ -626,7 +631,7 @@ class TERPeriodController(BaseAPI):
         period = get_object_or_404(TERPeriod, id=period_id)
 
         try:
-            student = User.objects.get(id=data.user_id)
+            student = User.objects.get(id=user_id)
         except User.DoesNotExist:
             return NotFoundError("Utilisateur introuvable.").to_response()
 
@@ -670,44 +675,63 @@ class TERPeriodController(BaseAPI):
         return 204, None
 
     # ==================== Encadrants ====================
-
     @http_get(
-        "/{period_id}/encadrants",
+        "/{period_id}/professors",
         response={200: PaginatedResponseSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
-        url_name="ter_periods_encadrants_list",
+        url_name="ter_periods_professors_list",
     )
-    def list_encadrants(self, request: HttpRequest, period_id: UUID, page: int = 1, page_size: int = 20):
-        """
-        List encadrants for a TER period (paginated).
-
-        Returns all professors and supervisors who have subjects
-        in this period (derived from TERSubject.professor and TERSubject.supervisor).
-
-        Only Respo TER / Admin can view encadrants.
-        """
+    def list_professors(self, request: HttpRequest, period_id: UUID, page: int = 1, page_size: int = 20):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
         if not is_ter_admin(request.user):
             return PermissionDeniedError(
-                "Seuls les responsables TER peuvent consulter les encadrants."
+                "Seuls les responsables TER peuvent consulter les professeurs."
             ).to_response()
 
-        period = get_object_or_404(TERPeriod, id=period_id)
+        period = get_object_or_404(
+            TERPeriod.objects.prefetch_related("professors"),
+            id=period_id,
+        )
 
-        subjects = TERSubject.objects.filter(ter_period=period)
+        professors = period.professors.order_by("last_name", "first_name")
 
-        professor_ids = subjects.values_list("professor_id", flat=True)
-        supervisor_ids = subjects.exclude(supervisor__isnull=True).values_list("supervisor_id", flat=True)
-
-        all_ids = set(professor_ids) | set(supervisor_ids)
-        all_ids.discard(None)
-
-        encadrants = User.objects.filter(id__in=all_ids).order_by("last_name", "first_name")
-
-        items, count, pg, ps = paginate_queryset(encadrants, page, page_size)
+        items, count, pg, ps = paginate_queryset(professors, page, page_size)
 
         return 200, PaginatedResponseSchema(
-            count=count, page=pg, page_size=ps,
-            results=[UserMinimalSchema.from_user(u) for u in items],
+            count=count,
+            page=pg,
+            page_size=ps,
+            results=[UserMinimalSchema.from_user(p) for p in items],
         )
+
+    @http_post(
+        "/{period_id}/professors/{user_id}",
+        response={200: UserMinimalSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+    )
+    def add_professor(self, request: HttpRequest, period_id: UUID, user_id: UUID):
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        if not is_ter_admin(request.user):
+            return PermissionDeniedError("Accès réservé aux responsables TER.").to_response()
+
+        period = get_object_or_404(TERPeriod, id=period_id)
+        user = get_object_or_404(User, id=user_id)
+
+        period.professors.add(user)
+
+        return 200, UserMinimalSchema.from_user(user)
+
+    @http_delete(
+        "/{period_id}/professors/{user_id}",
+        response={204: None},
+    )
+    def remove_professor(self, request: HttpRequest, period_id: UUID, user_id: UUID):
+        if not is_ter_admin(request.user):
+            return PermissionDeniedError("Accès réservé aux responsables TER.").to_response()
+
+        period = get_object_or_404(TERPeriod, id=period_id)
+        period.professors.remove(user_id)
+
+        return 204, None

@@ -17,12 +17,12 @@ __all__ = ["TERPeriodSchema", "StagePeriodSchema", "UserMinimalSchema"]
 
 
 class GroupListSchema(Schema):
-    """Schema for group list view."""
-
     id: UUID
     name: str
-    leader: UserMinimalSchema
+    leader: UserMinimalSchema | None
+    members: list[UserMinimalSchema]
     member_count: int
+    max_group_size: int
     status: str
     project_type: str
     created: datetime
@@ -43,6 +43,9 @@ class GroupCreateSchema(Schema):
     name: str
     ter_period_id: UUID | None = None
     stage_period_id: UUID | None = None
+    max_group_size: int | None = None
+    member_ids: list[UUID] = []
+
 
     @field_validator("name")
     @classmethod
@@ -53,11 +56,11 @@ class GroupCreateSchema(Schema):
             raise ValueError("Le nom du groupe doit faire au moins 3 caracteres.")
         return v.strip()
 
-
 class GroupUpdateSchema(Schema):
     """Schema for updating a group."""
 
     name: str | None = None
+    max_group_size: int | None = None
 
     @field_validator("name")
     @classmethod
@@ -84,6 +87,8 @@ class InvitationSchema(Schema):
     created: datetime
     responded_at: datetime | None
 
+class AddMemberSchema(Schema):
+    user_id: UUID
 
 class InvitationCreateSchema(Schema):
     """Schema for creating an invitation."""
