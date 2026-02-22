@@ -57,3 +57,12 @@ class Migration(migrations.Migration):
     operations = [
         migrations.RunPython(create_role_groups, remove_role_groups),
     ]
+
+def get_role_data(u):
+        return {
+            "is_respo_ter": u.groups.filter(name="Respo TER").exists(),
+            "is_respo_stage": u.groups.filter(name="Respo Stage").exists(),
+            "is_etudiant": u.groups.filter(name="Étudiant").exists(),
+            "is_encadrant": u.groups.filter(name="Encadrant").exists(),
+            "is_externe": u.groups.filter(name="Externe").exists(),
+        }

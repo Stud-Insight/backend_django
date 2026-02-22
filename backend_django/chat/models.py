@@ -45,6 +45,9 @@ class Conversation(BaseModel):
         """Get count of unread messages for a user."""
         return self.messages.exclude(sender=user).filter(read_by__isnull=True).count()
 
+def chat_directory_path(instance, filename):
+    """Définit le chemin d'upload basé sur l'ID de la conversation."""
+    return f"uploads/chats/conv_{instance.conversation.id}/{filename}"
 
 class Message(BaseModel):
     """
@@ -61,7 +64,10 @@ class Message(BaseModel):
         on_delete=models.CASCADE,
         related_name="sent_messages",
     )
-    content = models.TextField()
+
+    content = models.TextField(blank=True) 
+    file = models.FileField(upload_to=chat_directory_path, null=True, blank=True)
+    file_name = models.CharField(max_length=255, null=True, blank=True)
     read_by = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         related_name="read_messages",
@@ -72,9 +78,10 @@ class Message(BaseModel):
         ordering = ["created"]
 
     def __str__(self):
+        if self.file and not self.content:
+            return f"{self.sender}: [Fichier] {self.file_name}"
         return f"{self.sender}: {self.content[:50]}"
 
     def mark_as_read(self, user):
-        """Mark this message as read by a user."""
         if user != self.sender:
             self.read_by.add(user)
