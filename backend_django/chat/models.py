@@ -5,7 +5,13 @@ Chat models for conversations and messages.
 from django.conf import settings
 from django.db import models
 
-from backend_django.core.models import BaseModel
+
+class BaseModel(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        abstract = True
 
 
 def chat_file_path(instance, filename):
