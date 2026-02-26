@@ -5,7 +5,13 @@ Chat models for conversations and messages.
 from django.conf import settings
 from django.db import models
 
-from backend_django.core.models import BaseModel
+
+class BaseModel(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        abstract = True
 
 
 class Conversation(BaseModel):
@@ -83,5 +89,9 @@ class Message(BaseModel):
         return f"{self.sender}: {self.content[:50]}"
 
     def mark_as_read(self, user):
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
         if user != self.sender:
             self.read_by.add(user)
