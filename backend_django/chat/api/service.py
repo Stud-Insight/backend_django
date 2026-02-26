@@ -8,10 +8,10 @@ def get_or_create_academic_chat(group_instance):
     et l'encadrant du sujet assigné.
     """
     subject = group_instance.assigned_subject
-    if not subject or not subject.owner: # 'owner' ou le champ qui désigne l'encadrant
+    if not subject or not subject.professor: # 'owner' ou le champ qui désigne l'encadrant
         return None
     
-    encadrant = subject.owner
+    encadrant = subject.professor
 
     participants = list(group_instance.members.all())
     participants.append(encadrant)
@@ -81,7 +81,7 @@ def can_users_message_each_other(user_a, user_b):
             if group.assigned_subject:
                 # Vérifie la liaison Étudiant <-> Encadrant
                 is_student = group.is_member(user_a) or group.is_member(user_b)
-                is_encadrant = (group.assigned_subject.owner == user_a or group.assigned_subject.owner == user_b)
+                is_encadrant = (group.assigned_subject.professor == user_a or group.assigned_subject.professor == user_b)
                 if is_student and is_encadrant:
                     return True
 

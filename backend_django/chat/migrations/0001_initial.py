@@ -41,6 +41,8 @@ class Migration(migrations.Migration):
                 ('conversation', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='messages', to='chat.conversation')),
                 ('read_by', models.ManyToManyField(blank=True, related_name='read_messages', to=settings.AUTH_USER_MODEL)),
                 ('sender', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='sent_messages', to=settings.AUTH_USER_MODEL)),
+                ('file', models.FileField(blank=True, null=True, upload_to='chat_files/')),
+                ('file_name', models.CharField(blank=True, max_length=255, null=True)),
             ],
             options={
                 'ordering': ['created'],

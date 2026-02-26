@@ -18,13 +18,20 @@ class ParticipantSchema(Schema):
 
 
 class MessageSchema(Schema):
-    """Schema for a chat message."""
-
+    
     id: UUID
     sender: ParticipantSchema
     content: str
+    file_url: str | None = None
+    file_name: str | None = None
     created: datetime
     is_read: bool = False
+
+    @staticmethod
+    def resolve_file_url(obj):
+        if obj.file:
+            return obj.file.url
+        return None
 
 
 class ConversationSchema(Schema):

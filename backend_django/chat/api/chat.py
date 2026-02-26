@@ -11,6 +11,8 @@ from django.shortcuts import get_object_or_404
 from ninja_extra import api_controller
 from ninja_extra import http_get
 from ninja_extra import http_post
+from ninja import File
+from ninja.files import UploadedFile
 
 from backend_django.chat.models import Conversation
 from backend_django.chat.models import Message
@@ -46,6 +48,8 @@ def message_to_schema(message: Message, current_user: User) -> MessageSchema:
         id=message.id,
         sender=user_to_participant(message.sender),
         content=message.content,
+        file_url=message.file.url if message.file else None, # Ajout
+        file_name=message.file_name,
         created=message.created,
         is_read=message.read_by.filter(id=current_user.id).exists() or message.sender_id == current_user.id,
     )
@@ -109,6 +113,13 @@ class ChatController(BaseAPI):
         participants = list(User.objects.filter(id__in=data.participant_ids))
         if len(participants) != len(data.participant_ids):
             return BadRequestError("Un ou plusieurs participants introuvables.").to_response()
+        
+        if not data.is_group and not request.user.is_staff:
+            other_user = participants[0]
+            from chat.services import can_student_message_user 
+            
+            if not can_student_message_user(request.user, other_user):
+                return 403, {"message": "Vous ne pouvez contacter que votre encadrant assigné."}
 
         # Add current user to participants
         all_participant_ids = set(data.participant_ids) | {request.user.id}
@@ -171,7 +182,10 @@ class ChatController(BaseAPI):
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        conv = get_object_or_404(Conversation, id=conversation_id)
+        conv = get_object_or_404(
+            Conversation.objects.prefetch_related("participants", "messages__sender", "messages__read_by"), 
+            id=conversation_id
+        )
 
         if not conv.participants.filter(id=request.user.id).exists():
             return PermissionDeniedError("Vous n'êtes pas participant de cette conversation.").to_response()
@@ -200,6 +214,7 @@ class ChatController(BaseAPI):
         self,
         request: HttpRequest,
         conversation_id: UUID,
+        before: datetime | None = None,
         after: UUID | None = None,
     ):
         """
@@ -221,6 +236,9 @@ class ChatController(BaseAPI):
             after_msg = conv.messages.filter(id=after).first()
             if after_msg:
                 messages = messages.filter(created__gt=after_msg.created)
+        
+        if before:
+            messages = messages.filter(created__lt=before)
 
         # Mark fetched messages as read
         for msg in messages.exclude(sender=request.user):
@@ -233,12 +251,19 @@ class ChatController(BaseAPI):
         response={201: MessageSentSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
         url_name="chat_messages_send",
     )
-    def send_message(self, request: HttpRequest, conversation_id: UUID, data: SendMessageSchema):
-        """Send a message to a conversation."""
+    def send_message(
+        self, 
+        request: HttpRequest, 
+        conversation_id: UUID, 
+        content: str = None, # Devient optionnel
+        file: UploadedFile = File(None) # Ajout du fichier
+    ):
+        """Send a message (text and/or file) to a conversation."""
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not data.content.strip():
+        # On vérifie qu'il y a AU MOINS du texte ou un fichier
+        if not content and not file:
             return BadRequestError("Le message ne peut pas être vide.").to_response()
 
         conv = get_object_or_404(Conversation, id=conversation_id)
@@ -246,10 +271,13 @@ class ChatController(BaseAPI):
         if not conv.participants.filter(id=request.user.id).exists():
             return PermissionDeniedError().to_response()
 
+        # Création du message avec les nouveaux champs
         message = Message.objects.create(
             conversation=conv,
             sender=request.user,
-            content=data.content.strip(),
+            content=content.strip() if content else "",
+            file=file,
+            file_name=file.name if file else None
         )
 
         # Update conversation modified time
