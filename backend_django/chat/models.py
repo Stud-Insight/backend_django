@@ -4,7 +4,13 @@ Chat models for conversations and messages.
 
 from django.conf import settings
 from django.db import models
+
 from backend_django.core.models import BaseModel
+
+
+def chat_file_path(instance, filename):
+    """Generate upload path for chat files."""
+    return f"chat_files/conv_{instance.conversation_id}/{filename}"
 
 
 class Conversation(BaseModel):
@@ -44,13 +50,11 @@ class Conversation(BaseModel):
         """Get count of unread messages for a user."""
         return self.messages.exclude(sender=user).filter(read_by__isnull=True).count()
 
-def chat_directory_path(instance, filename):
-    """Définit le chemin d'upload basé sur l'ID de la conversation."""
-    return f"uploads/chats/conv_{instance.conversation.id}/{filename}"
 
 class Message(BaseModel):
     """
     A message in a conversation.
+    Supports text content and/or file attachments.
     """
 
     conversation = models.ForeignKey(
@@ -63,10 +67,17 @@ class Message(BaseModel):
         on_delete=models.CASCADE,
         related_name="sent_messages",
     )
-
-    content = models.TextField(blank=True) 
-    ('file', models.FileField(blank=True, null=True, upload_to='chat_files/')), 
-    ('file_name', models.CharField(blank=True, max_length=255, null=True)),
+    content = models.TextField(blank=True, default="")
+    file = models.FileField(
+        upload_to=chat_file_path,
+        blank=True,
+        null=True,
+    )
+    file_name = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+    )
     read_by = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         related_name="read_messages",
@@ -82,6 +93,6 @@ class Message(BaseModel):
         return f"{self.sender}: {self.content[:50]}"
 
     def mark_as_read(self, user):
-
+        """Mark this message as read by a user."""
         if user != self.sender:
             self.read_by.add(user)

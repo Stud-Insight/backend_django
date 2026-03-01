@@ -31,6 +31,7 @@ from backend_django.core.exceptions import ErrorSchema
 from backend_django.core.exceptions import NotAuthenticatedError
 from backend_django.core.exceptions import PermissionDeniedError
 from backend_django.users.models import User
+from backend_django.groups.models import Group
 
 
 def user_to_participant(user: User) -> ParticipantSchema:
@@ -99,7 +100,7 @@ class ChatController(BaseAPI):
 
     @http_post(
         "/conversations",
-        response={201: ConversationSchema, 400: ErrorSchema, 401: ErrorSchema},
+        response={201: ConversationSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema},
         url_name="chat_conversations_create",
     )
     def create_conversation(self, request: HttpRequest, data: CreateConversationSchema):
@@ -115,12 +116,15 @@ class ChatController(BaseAPI):
         if len(participants) != len(data.participant_ids):
             return BadRequestError("Un ou plusieurs participants introuvables.").to_response()
         
+        # Check messaging permissions for 1-on-1 conversations
         if not data.is_group and not request.user.is_staff:
             other_user = participants[0]
-            from chat.services import can_users_message_each_other 
-            
+            from backend_django.chat.api.service import can_users_message_each_other
+
             if not can_users_message_each_other(request.user, other_user):
-                return 403, {"message": "Vous ne pouvez contacter que votre encadrant assigné."}
+                return PermissionDeniedError(
+                    "Vous ne pouvez pas contacter cet utilisateur."
+                ).to_response()
 
         # Add current user to participants
         all_participant_ids = set(data.participant_ids) | {request.user.id}
@@ -311,3 +315,93 @@ class ChatController(BaseAPI):
         users = users[:20]  # Limit results
 
         return 200, [user_to_participant(u) for u in users]
+
+    @http_post(
+        "/groups/{group_id}/chat",
+        response={
+            200: ConversationSchema,
+            201: ConversationSchema,
+            400: ErrorSchema,
+            401: ErrorSchema,
+            403: ErrorSchema,
+            404: ErrorSchema,
+        },
+        url_name="chat_group_academic",
+    )
+    def get_or_create_group_chat(self, request: HttpRequest, group_id: UUID):
+        """
+        Get or create the academic chat between a group and its assigned subject's professor.
+
+        Story 6.1: Étendre le chat pour messagerie Encadrant-Groupe
+
+        Returns existing conversation or creates a new one with:
+        - All group members as participants
+        - The professor of the assigned subject as participant
+
+        Only accessible to:
+        - Group members
+        - The professor assigned to the group's subject
+        - TER admins
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        group = get_object_or_404(
+            Group.objects.select_related("assigned_subject", "assigned_subject__professor")
+            .prefetch_related("members"),
+            id=group_id,
+        )
+
+        # Check permissions: must be member, professor, or admin
+        is_member = group.is_member(request.user)
+        is_professor = (
+            group.assigned_subject
+            and group.assigned_subject.professor_id == request.user.id
+        )
+        is_admin = request.user.is_staff or request.user.groups.filter(
+            name__in=["Admin", "Respo TER"]
+        ).exists()
+
+        if not (is_member or is_professor or is_admin):
+            return PermissionDeniedError(
+                "Vous n'êtes pas autorisé à accéder au chat de ce groupe."
+            ).to_response()
+
+        # Check group has assigned subject with professor
+        if not group.assigned_subject:
+            return BadRequestError(
+                "Ce groupe n'a pas de sujet assigné."
+            ).to_response()
+
+        if not group.assigned_subject.professor:
+            return BadRequestError(
+                "Le sujet assigné n'a pas d'encadrant."
+            ).to_response()
+
+        # Get or create the conversation
+        from backend_django.chat.api.service import get_or_create_academic_chat
+
+        conv = get_or_create_academic_chat(group)
+
+        if not conv:
+            return BadRequestError(
+                "Impossible de créer la conversation."
+            ).to_response()
+
+        # Determine if it was just created (no messages yet)
+        was_created = conv.messages.count() == 0
+        status_code = 201 if was_created else 200
+
+        last_msg = conv.get_last_message()
+        return status_code, ConversationSchema(
+            id=conv.id,
+            name=conv.name or str(conv),
+            is_group=conv.is_group,
+            participants=[user_to_participant(p) for p in conv.participants.all()],
+            last_message=message_to_schema(last_msg, request.user) if last_msg else None,
+            unread_count=conv.messages.exclude(sender=request.user)
+            .exclude(read_by=request.user)
+            .count(),
+            created=conv.created,
+            modified=conv.modified,
+        )
