@@ -4,6 +4,7 @@ Chat models for conversations and messages.
 
 from django.conf import settings
 from django.db import models
+
 from backend_django.core.models import BaseModel
 
 
