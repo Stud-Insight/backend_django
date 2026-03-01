@@ -53,17 +53,17 @@ def can_users_message_each_other(user_a, user_b):
     # 2. Logique pour les Responsables (Cloisonnement strict)
     # ------------------------------------------------------
     # Cas : Un Respo TER veut parler à quelqu'un
-    if role_a["is_respo_ter"] or role_b["is_respo_ter"]:
-        respo = user_a if role_a["is_respo_ter"] else user_b
-        autre = user_b if role_a["is_respo_ter"] else user_a
+    if role_a == "is_respo_ter" or role_b == "is_respo_ter":
+        respo = user_a if role_a == "is_respo_ter" else user_b
+        autre = user_b if role_a == "is_respo_ter" else user_a
         
         # Le Respo TER peut parler aux Encadrants ou aux Étudiants de type TER
         return Group.objects.filter(project_type="TER", members=autre).exists() or role_autre["is_encadrant"]
 
     # Cas : Un Respo Stage veut parler à quelqu'un
-    if role_a["is_respo_stage"] or role_b["is_respo_stage"]:
-        respo = user_a if role_a["is_respo_stage"] else user_b
-        autre = user_b if role_a["is_respo_stage"] else user_a
+    if role_a == "is_respo_stage" or role_b == "is_respo_stage":
+        respo = user_a if role_a == "is_respo_stage" else user_b
+        autre = user_b if role_a == "is_respo_stage" else user_a
         
         # Le Respo Stage peut parler aux Externes ou aux Étudiants de type Stage
         return Group.objects.filter(project_type="Stage", members=autre).exists() or role_autre["is_externe"]

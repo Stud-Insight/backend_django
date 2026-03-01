@@ -6,7 +6,6 @@ from uuid import UUID
 
 from ninja import Schema
 
-from backend_django.groups.schemas.groups import GroupDetailSchema
 from backend_django.ter.schemas.periods import TERPeriodDetailSchema
 from backend_django.ter.schemas.subjects import TERSubjectListSchema
 
@@ -23,6 +22,6 @@ class MyTERSchema(Schema):
     """
 
     ter_period: TERPeriodDetailSchema | None
-    group: GroupDetailSchema | None
+    group: "backend_django.groups.schemas.groups.GroupDetailSchema"
     subject: TERSubjectListSchema | None
     status: str  # "no_period", "no_group", "group_forming", "group_formed", "subject_assigned"

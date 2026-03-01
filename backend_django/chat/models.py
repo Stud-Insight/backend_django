@@ -4,14 +4,7 @@ Chat models for conversations and messages.
 
 from django.conf import settings
 from django.db import models
-
-
-class BaseModel(models.Model):
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        abstract = True
+from backend_django.core.models import BaseModel
 
 
 class Conversation(BaseModel):
@@ -72,8 +65,8 @@ class Message(BaseModel):
     )
 
     content = models.TextField(blank=True) 
-    file = models.FileField(upload_to=chat_directory_path, null=True, blank=True)
-    file_name = models.CharField(max_length=255, null=True, blank=True)
+    ('file', models.FileField(blank=True, null=True, upload_to='chat_files/')), 
+    ('file_name', models.CharField(blank=True, max_length=255, null=True)),
     read_by = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         related_name="read_messages",
@@ -89,9 +82,6 @@ class Message(BaseModel):
         return f"{self.sender}: {self.content[:50]}"
 
     def mark_as_read(self, user):
-<<<<<<< Updated upstream
-=======
 
->>>>>>> Stashed changes
         if user != self.sender:
             self.read_by.add(user)

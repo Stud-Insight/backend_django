@@ -13,6 +13,7 @@ from ninja_extra import http_get
 from ninja_extra import http_post
 from ninja import File
 from ninja.files import UploadedFile
+from datetime import datetime
 
 from backend_django.chat.models import Conversation
 from backend_django.chat.models import Message
@@ -116,9 +117,9 @@ class ChatController(BaseAPI):
         
         if not data.is_group and not request.user.is_staff:
             other_user = participants[0]
-            from chat.services import can_student_message_user 
+            from chat.services import can_users_message_each_other 
             
-            if not can_student_message_user(request.user, other_user):
+            if not can_users_message_each_other(request.user, other_user):
                 return 403, {"message": "Vous ne pouvez contacter que votre encadrant assigné."}
 
         # Add current user to participants
