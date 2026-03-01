@@ -8,6 +8,11 @@ from django.db import models
 from backend_django.core.models import BaseModel
 
 
+def chat_file_path(instance, filename):
+    """Generate upload path for chat files."""
+    return f"chat_files/conv_{instance.conversation_id}/{filename}"
+
+
 class Conversation(BaseModel):
     """
     A conversation between two or more users.
@@ -49,6 +54,7 @@ class Conversation(BaseModel):
 class Message(BaseModel):
     """
     A message in a conversation.
+    Supports text content and/or file attachments.
     """
 
     conversation = models.ForeignKey(
@@ -61,7 +67,17 @@ class Message(BaseModel):
         on_delete=models.CASCADE,
         related_name="sent_messages",
     )
-    content = models.TextField()
+    content = models.TextField(blank=True, default="")
+    file = models.FileField(
+        upload_to=chat_file_path,
+        blank=True,
+        null=True,
+    )
+    file_name = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+    )
     read_by = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         related_name="read_messages",
@@ -72,6 +88,8 @@ class Message(BaseModel):
         ordering = ["created"]
 
     def __str__(self):
+        if self.file and not self.content:
+            return f"{self.sender}: [Fichier] {self.file_name}"
         return f"{self.sender}: {self.content[:50]}"
 
     def mark_as_read(self, user):

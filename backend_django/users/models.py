@@ -68,3 +68,12 @@ class User(AbstractUser):
     def get_absolute_url(self) -> str:
         """Get URL for user's detail view."""
         return reverse("users:detail", kwargs={"pk": self.id})
+
+    def get_role_data(u):
+        return {
+            "is_respo_ter": u.groups.filter(name="Respo TER").exists(),
+            "is_respo_stage": u.groups.filter(name="Respo Stage").exists(),
+            "is_etudiant": u.groups.filter(name="Étudiant").exists(),
+            "is_encadrant": u.groups.filter(name="Encadrant").exists(),
+            "is_externe": u.groups.filter(name="Externe").exists(),
+        }

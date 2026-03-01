@@ -14,6 +14,7 @@ Contains:
 import logging
 import uuid
 from datetime import date
+from typing import Optional
 
 from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
@@ -690,7 +691,7 @@ class DeliverableAccessLog(BaseModel):
         user,
         access_type: str,
         request=None,
-        details: dict | None = None,
+        details: Optional[dict] = None,
     ) -> "DeliverableAccessLog":
         """
         Create an audit log entry for deliverable access.

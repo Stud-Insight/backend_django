@@ -3,6 +3,7 @@ Authentication classes for the API.
 """
 
 from typing import Any
+from typing import Optional
 
 from django.http import HttpRequest
 from ninja.security import SessionAuth as NinjaSessionAuth
@@ -16,7 +17,7 @@ class SessionAuth(NinjaSessionAuth):
     Returns the authenticated user if the session is valid.
     """
 
-    def authenticate(self, request: HttpRequest, key: str | None) -> Any | None:
+    def authenticate(self, request: HttpRequest, key: Optional[str]) -> Optional[Any]:
         """
         Authenticate the request using session.
 
@@ -40,7 +41,7 @@ class OptionalSessionAuth(NinjaSessionAuth):
     Returns the user if authenticated, None otherwise.
     """
 
-    def authenticate(self, request: HttpRequest, key: str | None) -> Any | None:
+    def authenticate(self, request: HttpRequest, key: Optional[str]) -> Optional[Any]:
         """Authenticate the request, returning None if not authenticated."""
         if request.user.is_authenticated:
             return request.user

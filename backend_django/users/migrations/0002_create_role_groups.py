@@ -57,3 +57,4 @@ class Migration(migrations.Migration):
     operations = [
         migrations.RunPython(create_role_groups, remove_role_groups),
     ]
+
