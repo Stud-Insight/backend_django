@@ -5,6 +5,7 @@ TER Periods API controller.
 from datetime import timedelta
 from uuid import UUID
 
+from django.db.models import Q
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from ninja_extra import api_controller, http_delete, http_get, http_post, http_put
@@ -604,9 +605,10 @@ class TERPeriodController(BaseAPI):
         )
 
     @http_post(
-        "/{period_id}/students/{user_id}",
+        "/{period_id}/students",
         response={
             201: UserMinimalSchema,
+            400: ErrorSchema,
             401: ErrorSchema,
             403: ErrorSchema,
             404: ErrorSchema,
@@ -614,7 +616,7 @@ class TERPeriodController(BaseAPI):
         },
         url_name="ter_periods_students_add",
     )
-    def add_student(self, request: HttpRequest, period_id: UUID, user_id: UUID):
+    def add_student(self, request: HttpRequest, period_id: UUID, data: AddStudentSchema):
         """
         Add a student to a TER period.
 
@@ -631,7 +633,7 @@ class TERPeriodController(BaseAPI):
         period = get_object_or_404(TERPeriod, id=period_id)
 
         try:
-            student = User.objects.get(id=user_id)
+            student = User.objects.get(id=data.user_id)
         except User.DoesNotExist:
             return NotFoundError("Utilisateur introuvable.").to_response()
 
@@ -676,40 +678,64 @@ class TERPeriodController(BaseAPI):
 
     # ==================== Encadrants ====================
     @http_get(
-        "/{period_id}/professors",
+        "/{period_id}/encadrants",
         response={200: PaginatedResponseSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
-        url_name="ter_periods_professors_list",
+        url_name="ter_periods_encadrants_list",
     )
-    def list_professors(self, request: HttpRequest, period_id: UUID, page: int = 1, page_size: int = 20):
+    def list_encadrants(self, request: HttpRequest, period_id: UUID, page: int = 1, page_size: int = 20):
+        """
+        List encadrants for a TER period (paginated).
+
+        Returns the union of:
+        - Professors explicitly added to the period (period.professors)
+        - Professors/supervisors who have subjects in this period
+
+        Only Respo TER / Admin can view encadrants.
+        """
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
         if not is_ter_admin(request.user):
             return PermissionDeniedError(
-                "Seuls les responsables TER peuvent consulter les professeurs."
+                "Seuls les responsables TER peuvent consulter les encadrants."
             ).to_response()
 
-        period = get_object_or_404(
-            TERPeriod.objects.prefetch_related("professors"),
-            id=period_id,
-        )
+        period = get_object_or_404(TERPeriod, id=period_id)
 
-        professors = period.professors.order_by("last_name", "first_name")
+        # Encadrants inscrits explicitement
+        explicit_ids = period.professors.values_list("id", flat=True)
 
-        items, count, pg, ps = paginate_queryset(professors, page, page_size)
+        # Encadrants ayant des sujets (professor ou supervisor)
+        from_subjects = User.objects.filter(
+            Q(ter_subjects_created__ter_period=period) |
+            Q(ter_subjects_supervised__ter_period=period)
+        ).values_list("id", flat=True)
+
+        # Union des deux sources
+        all_ids = set(explicit_ids) | set(from_subjects)
+        encadrants = User.objects.filter(id__in=all_ids).order_by("last_name", "first_name")
+
+        items, count, pg, ps = paginate_queryset(encadrants, page, page_size)
 
         return 200, PaginatedResponseSchema(
             count=count,
             page=pg,
             page_size=ps,
-            results=[UserMinimalSchema.from_user(p) for p in items],
+            results=[UserMinimalSchema.from_user(e) for e in items],
         )
 
     @http_post(
-        "/{period_id}/professors/{user_id}",
+        "/{period_id}/encadrants/{user_id}",
         response={200: UserMinimalSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="ter_periods_encadrants_add",
     )
-    def add_professor(self, request: HttpRequest, period_id: UUID, user_id: UUID):
+    def add_encadrant(self, request: HttpRequest, period_id: UUID, user_id: UUID):
+        """
+        Add an encadrant to a TER period.
+
+        This allows adding professors before they create subjects.
+        Only Respo TER / Admin can add encadrants.
+        """
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
@@ -724,10 +750,21 @@ class TERPeriodController(BaseAPI):
         return 200, UserMinimalSchema.from_user(user)
 
     @http_delete(
-        "/{period_id}/professors/{user_id}",
-        response={204: None},
+        "/{period_id}/encadrants/{user_id}",
+        response={204: None, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="ter_periods_encadrants_remove",
     )
-    def remove_professor(self, request: HttpRequest, period_id: UUID, user_id: UUID):
+    def remove_encadrant(self, request: HttpRequest, period_id: UUID, user_id: UUID):
+        """
+        Remove an encadrant from a TER period.
+
+        Only removes from the explicit list (professors field).
+        If the encadrant has subjects, they will still appear in the list.
+        Only Respo TER / Admin can remove encadrants.
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
         if not is_ter_admin(request.user):
             return PermissionDeniedError("Accès réservé aux responsables TER.").to_response()
 

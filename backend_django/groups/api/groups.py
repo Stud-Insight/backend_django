@@ -21,7 +21,7 @@ from backend_django.core.exceptions import (
     NotFoundError,
     PermissionDeniedError,
 )
-from backend_django.core.roles import is_ter_admin
+from backend_django.core.roles import is_ter_admin, is_stage_admin
 from backend_django.core.schemas import PaginatedResponseSchema, paginate_queryset
 from backend_django.groups.models import Group, GroupInvitation, GroupStatus, InvitationStatus
 from backend_django.groups.schemas.groups import (
@@ -302,23 +302,54 @@ class GroupController(BaseAPI):
             ter_period = get_object_or_404(TERPeriod, id=data.ter_period_id)
             project_type = "TER"
 
+            # Validation for students (Respo TER can bypass)
+            if not is_ter_admin(request.user):
+                if ter_period.status != PeriodStatus.OPEN:
+                    return BadRequestError("La période TER n'est pas ouverte.").to_response()
+
+                today = date.today()
+                if not (ter_period.group_formation_start <= today <= ter_period.group_formation_end):
+                    return BadRequestError("La période de formation des groupes est terminée.").to_response()
+
+            # Check user doesn't already lead a group for this period
+            existing_group = Group.objects.filter(
+                leader=request.user,
+                ter_period=ter_period,
+            ).first()
+            if existing_group:
+                return BadRequestError("Vous êtes déjà leader d'un groupe pour cette période TER.").to_response()
+
         elif data.stage_period_id:
             stage_period = get_object_or_404(StagePeriod, id=data.stage_period_id)
             project_type = "Stage"
 
+            # Validation for students (Respo Stage can bypass)
+            if not is_stage_admin(request.user):
+                if stage_period.status != PeriodStatus.OPEN:
+                    return BadRequestError("La période Stage n'est pas ouverte.").to_response()
+
+            # Check user doesn't already lead a group for this period
+            existing_group = Group.objects.filter(
+                leader=request.user,
+                stage_period=stage_period,
+            ).first()
+            if existing_group:
+                return BadRequestError("Vous êtes déjà leader d'un groupe pour cette période Stage.").to_response()
+
         try:
             with transaction.atomic():
 
-                # 1️⃣ Create group
+                # 1️⃣ Create group with current user as leader
                 group = Group.objects.create(
                     name=data.name,
+                    leader=request.user,
                     project_type=project_type,
                     ter_period=ter_period,
                     stage_period=stage_period,
                     max_group_size=data.max_group_size,
                 )
 
-                # Leader automatically added in save()
+                # Leader automatically added to members in save()
 
                 # 2️⃣ Add extra members
                 for user_id in data.member_ids:
@@ -331,12 +362,12 @@ class GroupController(BaseAPI):
                     if group.is_member(user):
                         continue
 
-                    group.members.add(user)
-
                     if not group.can_add_member():
                         raise ValueError(
                             f"Groupe plein (max {group.max_group_size})"
                         )
+
+                    group.members.add(user)
 
                     if not group.leader:
                         group.leader = user
@@ -622,11 +653,6 @@ class GroupController(BaseAPI):
 
         new_leader = get_object_or_404(User, id=data.new_leader_id)
 
-        # Find the new leader
-        new_leader = User.objects.filter(id=data.new_leader_id).first()
-        if not new_leader:
-            return NotFoundError("Utilisateur non trouvé.").to_response()
-
         # Check new leader is a member
         if not group.is_member(new_leader):
             return BadRequestError("Le nouveau leader doit être membre du groupe.").to_response()
@@ -890,12 +916,12 @@ class GroupController(BaseAPI):
         if group.is_member(user):
             return BadRequestError("Cet utilisateur est deja membre du groupe.").to_response()
 
-        group.members.add(user)
-
         if not group.can_add_member():
             return BadRequestError(
                 f"Groupe plein (max {group.max_group_size})"
             ).to_response()
+
+        group.members.add(user)
 
         if not group.leader:
             group.leader = user

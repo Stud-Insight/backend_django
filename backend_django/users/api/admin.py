@@ -48,9 +48,12 @@ logger = logging.getLogger(__name__)
 
 
 def generate_temp_password(length: int = 16) -> str:
-    return "123"
+    """Generate a temporary password. Returns '123' in DEBUG mode for easier testing."""
+    from django.conf import settings
 
-    """Generate a secure temporary password."""
+    if settings.DEBUG:
+        return "123"
+
     alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
     return "".join(secrets.choice(alphabet) for _ in range(length))
 

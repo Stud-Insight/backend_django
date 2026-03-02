@@ -22,7 +22,7 @@ class GroupListSchema(Schema):
     leader: UserMinimalSchema | None
     members: list[UserMinimalSchema]
     member_count: int
-    max_group_size: int
+    max_group_size: int | None
     status: str
     project_type: str
     created: datetime

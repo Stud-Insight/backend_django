@@ -13,9 +13,6 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AlterField(
-            model_name='group',
-            name='leader',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='led_groups', to=settings.AUTH_USER_MODEL, verbose_name='leader'),
-        ),
+        # Migration kept empty - leader field stays as CASCADE (not SET_NULL)
+        # Vincent's original change reverted: groups must always have a leader
     ]

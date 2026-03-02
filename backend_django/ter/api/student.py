@@ -67,8 +67,9 @@ def group_to_detail_schema(group: Group) -> GroupDetailSchema:
     return GroupDetailSchema(
         id=group.id,
         name=group.name,
-        leader=UserMinimalSchema.from_user(group.leader),
+        leader=UserMinimalSchema.from_user(group.leader) if group.leader else None,
         member_count=group.member_count,
+        max_group_size=group.max_group_size,
         status=group.status,
         project_type=group.project_type,
         created=group.created,
