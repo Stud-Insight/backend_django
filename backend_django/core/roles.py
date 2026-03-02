@@ -11,7 +11,7 @@ Defines the 6 roles used across the platform:
 """
 
 from enum import Enum
-from typing import Union
+from typing import List, Union
 
 
 class Role(str, Enum):
@@ -84,7 +84,7 @@ def user_has_role(user, role: Union["Role", str]) -> bool:
     return user.groups.filter(name=role_name).exists()
 
 
-def user_has_any_role(user, role: Union["Role", str]) -> bool:
+def user_has_any_role(user, roles: List[Union["Role", str]]) -> bool:
     """
     Check if a user has any of the specified roles.
 

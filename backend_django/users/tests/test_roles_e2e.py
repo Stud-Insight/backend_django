@@ -127,7 +127,7 @@ class TestAdminOnboardingWorkflow:
 
         # Step 4: Verify all users created with correct roles
         response = admin_client.get("/api/users/")
-        users = response.json()
+        users = response.json()["results"]
 
         # Check each role is assigned correctly
         respo_ter_user = next(u for u in users if u["email"] == "respo.ter@univ-montpellier.fr")
@@ -420,7 +420,7 @@ class TestBulkUserManagementWorkflow:
 
         # List all users and verify count
         response = admin_client.get("/api/users/")
-        all_users = response.json()
+        all_users = response.json()["results"]
 
         student_users = [u for u in all_users if "etu.umontpellier.fr" in u["email"]]
         assert len(student_users) == 5

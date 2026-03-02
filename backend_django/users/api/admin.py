@@ -28,6 +28,7 @@ from backend_django.core.exceptions import NotFoundError
 from backend_django.core.exceptions import PermissionDeniedError
 from backend_django.core.exceptions import ValidationError
 from backend_django.core.roles import is_admin_or_respo
+from backend_django.core.schemas import PaginatedResponseSchema, paginate_queryset
 from backend_django.core.roles import Role
 from backend_django.core.roles import ROLE_DESCRIPTIONS
 from backend_django.ter.models import TERPeriod
@@ -58,19 +59,55 @@ class UserAdminController(BaseAPI):
 
     @http_get(
         "/",
-        response={200: list[UserListSchema], 401: ErrorSchema, 403: ErrorSchema},
+        response={200: PaginatedResponseSchema, 401: ErrorSchema, 403: ErrorSchema},
         url_name="users_list",
     )
-    def list_users(self, request: HttpRequest):
-        """List all users. Requires staff permissions."""
+    def list_users(
+        self,
+        request: HttpRequest,
+        search: str = "",
+        role: str = "",
+        page: int = 1,
+        page_size: int = 20,
+    ):
+        """
+        List users with optional search and role filter (paginated).
+
+        Query params:
+        - search: Filter by name or email (case & accent insensitive)
+        - role: Filter by role (e.g., "etud", "encad", "respo")
+        - page: Page number (default 1)
+        - page_size: Results per page (default 20, max 100)
+
+        Requires staff permissions.
+        """
         if not request.user.is_authenticated:
             return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
 
         if not is_admin_or_respo(request.user):
             return PermissionDeniedError("Permission administrateur ou responsable requise.").to_response()
 
-        users = User.objects.prefetch_related("groups__permissions").all()
-        return 200, [UserListSchema.from_user(user) for user in users]
+        users = User.objects.prefetch_related("groups__permissions").all().order_by("last_name", "first_name")
+
+        # Filter by search term (accent insensitive)
+        if search:
+            from django.db.models import Q
+            users = users.filter(
+                Q(first_name__unaccent__icontains=search) |
+                Q(last_name__unaccent__icontains=search) |
+                Q(email__icontains=search)
+            )
+
+        # Filter by role (partial match, case & accent insensitive)
+        if role:
+            users = users.filter(groups__name__unaccent__icontains=role)
+
+        items, count, pg, ps = paginate_queryset(users, page, page_size)
+
+        return 200, PaginatedResponseSchema(
+            count=count, page=pg, page_size=ps,
+            results=[UserListSchema.from_user(user) for user in items],
+        )
 
     @http_get(
         "/roles",

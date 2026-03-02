@@ -277,7 +277,8 @@ class TestRolePermissionIntegration:
         response = client.get("/api/users/")
         assert response.status_code == 200
 
-        users_data = response.json()
+        data = response.json()
+        users_data = data["results"]
 
         # Find our test users
         user1_data = next((u for u in users_data if u["email"] == "user1@test.com"), None)
