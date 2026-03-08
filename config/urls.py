@@ -22,6 +22,9 @@ urlpatterns = [
     path("accounts/", include("allauth.urls")),
     # API (Django Ninja)
     path("api/", api.urls),
+    path('admin/', admin.site.urls),
+    # C'est ici qu'on branche ton fichier notification/urls.py
+    path('notification/', include('notification.urls')),
     # Media files
     *static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT),
 ]

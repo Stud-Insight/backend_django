@@ -1,0 +1,66 @@
+import json
+from django.test import TransactionTestCase, Client
+from django.contrib.auth.models import User
+from ..models import Notification
+from django.test import override_settings
+from django.core import mail
+from ..tasks import send_email_notification_task
+from ..api.stream import trigger_notification # Importe ta fonction logique
+from ..umodels import NotificationPreference
+
+class SSETestCase(TransactionTestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='testuser', password='password')
+        self.client = Client()
+        self.client.login(username='testuser', password='password')
+
+    def test_sse_stream_format(self):
+        """Vérifie que le stream envoie les données au format data: {json}"""
+        Notification.objects.create(user=self.user, message="Test SSE", type="info")
+        
+        # On appelle l'endpoint
+        response = self.client.get('/notification/api/stream/')
+        
+        # On récupère le premier chunk du stream
+        stream_content = next(response.streaming_content).decode()
+        
+        self.assertIn('data: {', stream_content)
+        self.assertIn('Test SSE', stream_content)
+        self.assertEqual(response['Content-Type'], 'text/event-stream')
+
+
+class EmailTaskTestCase(TransactionTestCase):
+    @override_settings(CELERY_TASK_ALWAYS_EAGER=True)
+    def test_email_task_sends_mail(self):
+        """Vérifie que la tâche Celery envoie bien un email"""
+        send_email_notification_task.delay(
+            user_email='test@example.com',
+            subject='Urgent',
+            message='Contenu du test'
+        )
+        
+        # Django intercepte les mails dans 'mail.outbox' pendant les tests
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].subject, 'Urgent')
+        self.assertEqual(mail.outbox[0].to, ['test@example.com'])
+
+
+class PreferencesTestCase(TransactionTestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='prefuser', email='pref@test.com')
+        self.prefs = NotificationPreference.objects.create(
+            user=self.user, 
+            email_messages=False # Désactivé pour les messages
+        )
+
+    @override_settings(CELERY_TASK_ALWAYS_EAGER=True)
+    def test_disabled_preference_blocks_email_only(self):
+        """Vérifie que le mail est bloqué mais pas la notif in-app"""
+        # On déclenche une notification de type 'messages'
+        trigger_notification(self.user, 'messages', 'Tu as un message')
+        
+        # 1. La notification in-app doit exister
+        self.assertTrue(Notification.objects.filter(user=self.user).exists())
+        
+        # 2. Aucun email ne doit être envoyé (car email_messages=False)
+        self.assertEqual(len(mail.outbox), 0)

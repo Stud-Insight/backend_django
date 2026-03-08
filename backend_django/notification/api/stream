@@ -1,0 +1,59 @@
+import json
+import time
+from django.http import StreamingHttpResponse
+from django.contrib.auth.decorators import login_required
+from django.http import JsonResponse
+from django.views.decorators.http import require_http_methods
+from ..models import Notification  # On remonte d'un cran pour trouver models.py
+
+@login_required
+def notification_stream(request):
+    def event_stream():
+        # On récupère le dernier ID pour ne pas spammer l'historique au refresh
+        last_notif = Notification.objects.filter(user=request.user).order_by('-id').first()
+        last_id = last_notif.id if last_notif else 0
+
+        while True:
+            # Récupération des nouveautés
+            notifications = Notification.objects.filter(
+                user=request.user, 
+                id__gt=last_id
+            ).order_by('id')
+
+            for notification in notifications:
+                data = {
+                    'id': notification.id,
+                    'message': notification.message,
+                    'type': getattr(notification, 'type', 'info'),
+                }
+                # Format SSE standard
+                yield f"data: {json.dumps(data)}\n\n"
+                last_id = notification.id
+
+            # Polling toutes les 2 secondes (Critère 7.1)
+            time.sleep(2)
+
+    response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
+    response['Cache-Control'] = 'no-cache'
+    response['X-Accel-Buffering'] = 'no'
+    return response
+
+from django.http import JsonResponse
+from django.views.decorators.http import require_http_methods
+import json
+
+@require_http_methods(["PATCH"])
+def update_preferences(request):
+    data = json.loads(request.body)
+    prefs, _ = NotificationPreference.objects.get_or_create(user=request.user)
+    
+    # On met à jour uniquement les champs envoyés
+    if 'email_messages' in data:
+        prefs.email_messages = data['email_messages']
+    if 'email_assignments' in data:
+        prefs.email_assignments = data['email_assignments']
+    if 'email_deadlines' in data:
+        prefs.email_deadlines = data['email_deadlines']
+        
+    prefs.save()
+    return JsonResponse({'status': 'updated'})

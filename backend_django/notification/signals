@@ -1,0 +1,49 @@
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from .models import Notification
+# Remplace par tes vrais modèles
+from backend_django.chat.models import Message
+from backend_django.notification.tasks import send_email_notification_task
+# from apps.chat.models import Message 
+# from apps.tasks.models import Task
+
+@receiver(post_save, sender='tasks.Task') # Exemple : Quand une tâche est créée
+def notify_new_task(sender, instance, created, **kwargs):
+    if created:
+        # On crée l'enregistrement en base (Critère 7.3.1)
+        Notification.objects.create(
+            user=instance.assigned_to,
+            message=f"Une nouvelle tâche vous a été assignée : {instance.title}",
+            type="assignment"
+        )
+
+@receiver(post_save, sender='projects.Assignment')
+def handle_critical_assignment_event(sender, instance, created, **kwargs):
+    # Si l'assignation est complétée (Critère 7.4.1)
+    if instance.status == 'COMPLETED':
+        # On ne lance pas l'envoi directement, on l'ajoute à la queue Celery
+        send_email_notification_task.delay(
+            user_email=instance.creator.email,
+            subject="Assignation terminée",
+            message=f"L'assignation '{instance.title}' a été marquée comme complétée."
+        )
+
+def trigger_notification(user, category, message_text):
+    # 1. Toujours créer la notification In-App (Critère 7.5.2)
+    Notification.objects.create(user=user, message=message_text, type=category)
+    
+    # 2. Vérifier les préférences avant d'envoyer l'email
+    prefs, created = NotificationPreference.objects.get_or_create(user=user)
+    
+    # Mapping catégorie -> champ en base
+    pref_field = f"email_{category}" # ex: email_messages
+    should_send_email = getattr(prefs, pref_field, False)
+
+    if should_send_email:
+        send_email_notification_task.delay(
+            user.email,
+            f"Nouvelle alerte : {category}",
+            message_text
+        )
+    else:
+        print(f"Email ignoré pour {user.username} (préférence désactivée)")
