@@ -303,7 +303,7 @@ class Command(BaseCommand):
         self.stdout.write(
             f"  Created group: {group_closed.name} ({group_closed.status})"
         )
-        group3.members.add(students[5])  # Felix only
+
         self.stdout.write(f"  Created group: {group3.name} (1 member - incomplete)")
 
         # Students 6-11 are solitaires (no group yet)
