@@ -40,6 +40,10 @@ class Command(BaseCommand):
         self.create_role_groups()
 
         # Create users
+
+        admin = self.create_admin(
+            "admin@univ.fr", "Admin", "System"
+        )
         respo_ter = self.create_user(
             "respo.ter@univ.fr", "Responsable", "TER", is_staff=True, role=Role.RESPO_TER
         )
@@ -199,9 +203,11 @@ class Command(BaseCommand):
             },
         ]
 
+        subjects = []
+
         for i, data in enumerate(subjects_data):
-            # Alternate between validated and submitted status
             status = SubjectStatus.VALIDATED if i < 6 else SubjectStatus.SUBMITTED
+
             subject = TERSubject.objects.create(
                 ter_period=ter_open,
                 title=data["title"],
@@ -212,35 +218,90 @@ class Command(BaseCommand):
                 max_groups=data["max_groups"],
                 status=status,
             )
-            self.stdout.write(f"  Created subject: {subject.title[:40]}... ({status})")
+
+            subjects.append(subject)
+
+            self.stdout.write(
+                f"  Created subject: {subject.title[:40]}... ({status})"
+            )
 
         # Create some groups
-        # Group 1: Complete group (3 members)
+        # Group 1: Complete group (3 members) -> will auto become FORME
         group1 = Group.objects.create(
             name="Les Codeurs Fous",
             leader=students[0],  # Alice
             ter_period=ter_open,
             project_type="ter",
+            max_group_size=4,
+            status=GroupStatus.OUVERT,
         )
-        group1.members.add(students[0], students[1], students[2])  # Alice, Bob, Claire
-        self.stdout.write(f"  Created group: {group1.name} (3 members)")
 
-        # Group 2: Complete group (2 members)
+        group1.members.add(students[1], students[2])  # Bob, Claire
+        group1.check_and_auto_form()
+        group1.save()
+
+        self.stdout.write(
+            f"  Created group: {group1.name} ({group1.member_count} members, {group1.status})"
+        )
+
+
+        # Group 2: Complete group (2 members) -> FORME
         group2 = Group.objects.create(
             name="Team ML",
             leader=students[3],  # David
             ter_period=ter_open,
             project_type="ter",
+            max_group_size=4,
+            status=GroupStatus.OUVERT,
         )
-        group2.members.add(students[3], students[4])  # David, Emma
-        self.stdout.write(f"  Created group: {group2.name} (2 members)")
 
-        # Group 3: Incomplete group (1 member - leader only)
+        group2.members.add(students[4])  # Emma
+        group2.check_and_auto_form()
+        group2.save()
+
+        self.stdout.write(
+            f"  Created group: {group2.name} ({group2.member_count} members, {group2.status})"
+        )
+
+
+        # Group 3: Incomplete group (1 member) -> remains OUVERT
         group3 = Group.objects.create(
             name="Solo Dev",
             leader=students[5],  # Felix
             ter_period=ter_open,
             project_type="ter",
+            max_group_size=4,
+            status=GroupStatus.OUVERT,
+        )
+
+        self.stdout.write(
+            f"  Created group: {group3.name} ({group3.member_count} member - open)"
+        )
+
+
+        # Optional: Closed group with subject assigned (demo FSM state)
+        subject_for_closed = TERSubject.objects.filter(
+            ter_period=ter_open,
+            status=SubjectStatus.VALIDATED,
+        ).first()
+
+        group_closed = Group.objects.create(
+            name="Archived Group",
+            leader=students[6],
+            ter_period=ter_open,
+            project_type="ter",
+            status=GroupStatus.FORME,
+        )
+
+        group_closed.members.add(students[7])
+
+        if subject_for_closed:
+            group_closed.assigned_subject = subject_for_closed
+            group_closed.close_group()
+            group_closed.save()
+
+        self.stdout.write(
+            f"  Created group: {group_closed.name} ({group_closed.status})"
         )
         group3.members.add(students[5])  # Felix only
         self.stdout.write(f"  Created group: {group3.name} (1 member - incomplete)")
@@ -251,6 +312,7 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS("\nDemo data created successfully!"))
         self.stdout.write("\nSummary:")
+        self.stdout.write(f"  - 1 Admin: {admin.email}")
         self.stdout.write(f"  - 1 Respo TER: {respo_ter.email}")
         self.stdout.write(f"  - 3 Encadrants: {encadrant1.email}, {encadrant2.email}, {encadrant3.email}")
         self.stdout.write(f"  - {len(students)} Students enrolled")
@@ -265,6 +327,35 @@ class Command(BaseCommand):
         for role in Role:
             AuthGroup.objects.get_or_create(name=role.value)
         self.stdout.write("  Role groups created/verified")
+
+    def create_admin(self, email, first_name, last_name):
+        """Create a superuser admin if not exists."""
+        user, created = User.objects.get_or_create(
+            email=email,
+            defaults={
+                "first_name": first_name,
+                "last_name": last_name,
+                "is_active": True,
+                "is_staff": True,
+                "is_superuser": True,
+            },
+        )
+
+        if created:
+            user.set_password("demo123")
+            user.save()
+
+            try:
+                group = AuthGroup.objects.get(name=Role.ADMIN.value)
+                user.groups.add(group)
+            except AuthGroup.DoesNotExist:
+                pass
+
+            self.stdout.write(f"  Created ADMIN user: {email}")
+        else:
+            self.stdout.write(f"  Admin already exists: {email}")
+
+        return user
 
     def create_user(self, email, first_name, last_name, is_staff=False, role=None):
         """Create a user if not exists."""
@@ -306,6 +397,7 @@ class Command(BaseCommand):
 
         # Delete demo users
         demo_emails = [
+            "admin@univ.fr",
             "respo.ter@univ.fr",
             "prof.dupont@univ.fr",
             "prof.martin@univ.fr",
