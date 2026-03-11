@@ -84,6 +84,26 @@ def ter_period_to_detail_schema(period: TERPeriod) -> TERPeriodDetailSchema:
 @api_controller("/ter/periods", tags=["TER Periods"], permissions=[IsAuthenticated])
 class TERPeriodController(BaseAPI):
     """API for TER periods."""
+    @http_get(
+        "/me",
+        response={200: list[TERPeriodSchema], 401: ErrorSchema},
+        url_name="ter_periods_me",
+    )
+    def get_my_periods(self, request: HttpRequest):
+        """
+        Return all TER periods the current student is enrolled in.
+
+        This allows a student to get their periods without providing a UUID.
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        # Fetch periods where the current user is enrolled
+        periods = TERPeriod.objects.filter(enrolled_students=request.user).order_by(
+            "-academic_year", "-created"
+        )
+
+        return 200, [ter_period_to_schema(p) for p in periods]
 
     @http_get(
         "/",
