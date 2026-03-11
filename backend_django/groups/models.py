@@ -49,6 +49,13 @@ class Group(BaseModel):
         help_text=_("Group name chosen by the leader"),
     )
 
+    max_group_size = models.PositiveIntegerField(
+        _("maximum group size"),
+        null=True,
+        blank=True,
+        help_text=_("Maximum number of members allowed in this group. Null means unlimited."),
+    )
+
     leader = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -259,6 +266,25 @@ class Group(BaseModel):
             old_subject.title if old_subject else None,
         )
 
+    def can_add_member(self) -> bool:
+        """
+        Check if new members can be added to the group.
+
+        Uses max_group_size from group if set, otherwise from ter_period.
+        """
+        if self.status != GroupStatus.OUVERT:
+            return False
+
+        # Use group's max_group_size, fallback to ter_period's
+        max_size = self.max_group_size
+        if max_size is None and self.ter_period:
+            max_size = self.ter_period.max_group_size
+
+        if max_size:
+            return self.members.count() < max_size
+
+        return True
+
     def admin_add_member(self, user):
         """
         Admin-only: Add a member to the group bypassing status checks.
@@ -269,10 +295,14 @@ class Group(BaseModel):
         Raises:
             ValueError: If max_group_size would be exceeded
         """
-        if self.ter_period and self.ter_period.max_group_size:
-            if self.member_count >= self.ter_period.max_group_size:
+        max_size = self.max_group_size
+        if max_size is None and self.ter_period:
+            max_size = self.ter_period.max_group_size
+
+        if max_size:
+            if self.member_count >= max_size:
                 raise ValueError(
-                    f"Cannot add member: group already at max size ({self.ter_period.max_group_size})"
+                    f"Cannot add member: group already at max size ({max_size})"
                 )
 
         self.members.add(user)
@@ -309,24 +339,6 @@ class Group(BaseModel):
 
     # Helper methods
 
-    def can_add_member(self) -> bool:
-        """
-        Check if new members can be added to the group.
-
-        Rules:
-        - Only groups with status "ouvert" can accept new members.
-        - TER groups are limited by ter_period.max_group_size.
-        - Stage groups have no size limit (internships are typically individual).
-        """
-        if self.status != GroupStatus.OUVERT:
-            return False
-
-        # Check group size limits (only TER periods have max_group_size)
-        if self.ter_period and self.ter_period.max_group_size:
-            return self.members.count() < self.ter_period.max_group_size
-
-        return True
-
     def can_remove_member(self, user) -> bool:
         """Check if a member can be removed from the group."""
         if self.status != GroupStatus.OUVERT:
@@ -343,7 +355,8 @@ class Group(BaseModel):
         return self.members.filter(id=user.id).exists()
 
     def is_leader(self, user) -> bool:
-        """Check if user is the leader of this group."""
+        if not self.leader_id:
+            return False
         return self.leader_id == user.id
 
     def get_period(self):
