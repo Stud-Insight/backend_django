@@ -4,10 +4,10 @@
 {% if attrs.type == "textarea" %}
   <div class="row mb-3">
     <div class="col-sm-10">
-      <span for="{{ attrs.id }}">
+      <label for="{{ attrs.id }}">
         {% slot label %}
       {% endslot %}
-    </span>
+    </label>
   </div>
   <textarea {% if attrs.required %}required{% endif %}
             {% if attrs.rows %}rows="{{ attrs.rows }}"{% endif %}
@@ -36,16 +36,16 @@
       <span class="form-check-label" for="{{ attrs.id }}">
         {% slot label %}
       {% endslot %}
-    </span>
+    </label>
   </div>
 </div>
 </div>
 {% else %}
 <div class="col-sm-10">
-  <span for="{{ attrs.id }}">
+  <label for="{{ attrs.id }}">
     {% slot label %}
   {% endslot %}
-</span>
+</label>
 </div>
 <div class="col-sm-10">
   <input {% if attrs.required %}required{% endif %}

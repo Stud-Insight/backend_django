@@ -364,14 +364,10 @@ class GroupController(BaseAPI):
 
                     if not group.can_add_member():
                         raise ValueError(
-                            f"Groupe plein (max {group.max_group_size})"
+                            f"Groupe plein (max {group.max_group_size or group.ter_period and group.ter_period.max_group_size})"
                         )
 
                     group.members.add(user)
-
-                    if not group.leader:
-                        group.leader = user
-                        group.save(update_fields=["leader"])
 
         except ValueError as e:
             return BadRequestError(str(e)).to_response()
@@ -918,14 +914,10 @@ class GroupController(BaseAPI):
 
         if not group.can_add_member():
             return BadRequestError(
-                f"Groupe plein (max {group.max_group_size})"
+                f"Groupe plein (max {group.max_group_size or group.ter_period and group.ter_period.max_group_size})"
             ).to_response()
 
         group.members.add(user)
-
-        if not group.leader:
-            group.leader = user
-            group.save(update_fields=["leader"])
 
         group = Group.objects.select_related(
             "leader", "ter_period", "stage_period"
@@ -976,6 +968,12 @@ class GroupController(BaseAPI):
 
         user = get_object_or_404(User, id=user_id)
 
+        # If group is closed and not admin → block
+        if group.status == GroupStatus.CLOTURE and not is_ter_admin(request.user):
+            return BadRequestError(
+                "Impossible de modifier un groupe clôturé."
+            ).to_response()
+
         # Only leader or admin
         if not group.is_leader(request.user) and not is_ter_admin(request.user):
             return PermissionDeniedError(
@@ -991,12 +989,6 @@ class GroupController(BaseAPI):
         if not group.is_member(user):
             return BadRequestError(
                 "Cet utilisateur n'est pas membre du groupe."
-            ).to_response()
-
-        # If group is closed and not admin → block
-        if group.status == GroupStatus.CLOTURE and not is_ter_admin(request.user):
-            return BadRequestError(
-                "Impossible de modifier un groupe clôturé."
             ).to_response()
 
         group.members.remove(user)
