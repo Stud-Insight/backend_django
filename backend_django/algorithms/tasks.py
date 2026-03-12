@@ -94,7 +94,13 @@ def run_ter_assignment_task(self, ter_period_id: str) -> dict:
                 )
 
             # Apply assignments to database
-            from backend_django.notifications.services import send_bulk_notifications
+            from backend_django.notifications.services import (
+                send_bulk_notifications,
+                send_notification,
+            )
+
+            # Track assignments per professor for encadrant notifications
+            professor_assignments: dict[UUID, list[str]] = {}
 
             for group_id, subject_id in result.assignments.items():
                 group = Group.objects.get(id=group_id)
@@ -102,17 +108,57 @@ def run_ter_assignment_task(self, ter_period_id: str) -> dict:
                 group.close_group()  # Transition to cloture
                 group.save()
 
-                # Notify all group members of their assignment
                 subject = TERSubject.objects.get(id=subject_id)
+
+                # Determine the choice rank for this group
+                rankings = group_rankings.get(group_id, [])
+                try:
+                    choice_rank = rankings.index(subject_id) + 1
+                except ValueError:
+                    choice_rank = None  # Cascade assignment, not in original ranking
+
+                # Notify all group members of their assignment
                 members = list(group.members.all())
                 if members:
+                    rank_info = f" (choix n°{choice_rank})" if choice_rank else " (assignation en cascade)"
                     send_bulk_notifications(
                         recipients=members,
                         notification_type="ter.subject_assigned",
                         title="Sujet TER assigné",
-                        message=f"Votre groupe « {group.name} » a été assigné au sujet « {subject.title} ».",
-                        data={"group_id": str(group_id), "subject_id": str(subject_id)},
+                        message=f"Votre groupe « {group.name} » a été assigné au sujet « {subject.title} »{rank_info}.",
+                        data={
+                            "group_id": str(group_id),
+                            "subject_id": str(subject_id),
+                            "choice_rank": choice_rank,
+                        },
                     )
+
+                # Collect for professor notification
+                if subject.professor_id:
+                    professor_assignments.setdefault(subject.professor_id, []).append(
+                        f"{group.name} → {subject.title}"
+                    )
+
+            # Notify each encadrant of all their assigned groups
+            for professor_id, assignment_list in professor_assignments.items():
+                from backend_django.users.models import User
+
+                try:
+                    professor = User.objects.get(id=professor_id)
+                except User.DoesNotExist:
+                    continue
+                count = len(assignment_list)
+                group_list = "\n".join(f"  • {a}" for a in assignment_list)
+                send_notification(
+                    recipient=professor,
+                    notification_type="ter.groups_assigned",
+                    title=f"{count} groupe(s) assigné(s)",
+                    message=f"Vous encadrez {count} groupe(s) pour la période « {period.name} » :\n{group_list}",
+                    data={
+                        "period_id": str(period.id),
+                        "group_count": count,
+                    },
+                )
 
             logger.info(
                 "TER assignment completed for %s: %d/%d assigned, avg rank: %.2f",
