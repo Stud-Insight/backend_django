@@ -486,7 +486,6 @@ class GroupInvitation(BaseModel):
         # Auto-decline other pending invitations for the same period
         self._auto_decline_other_invitations()
 
-        # TODO: Send real notification when notification system is implemented
         self._notify_leader_accepted()
 
     def _auto_decline_other_invitations(self):
@@ -532,7 +531,6 @@ class GroupInvitation(BaseModel):
         self.responded_at = timezone.now()
         self.save()
 
-        # TODO: Send real notification when notification system is implemented
         self._notify_leader_declined()
 
     def cancel(self):
@@ -544,27 +542,27 @@ class GroupInvitation(BaseModel):
         self.save()
 
     def _notify_leader_accepted(self):
-        """
-        Notify the group leader that the invitation was accepted.
+        """Notify the group leader that the invitation was accepted."""
+        from backend_django.notifications.services import send_notification
 
-        TODO: Replace with real notification system (email, in-app, etc.)
-        """
-        logger.info(
-            "NOTIFICATION: %s joined group '%s' (leader: %s)",
-            self.invitee.get_full_name() or self.invitee.email,
-            self.group.name,
-            self.group.leader.email,
+        invitee_name = self.invitee.get_full_name() or self.invitee.email
+        send_notification(
+            recipient=self.group.leader,
+            notification_type="group.invitation_accepted",
+            title="Invitation acceptée",
+            message=f"{invitee_name} a rejoint le groupe « {self.group.name} ».",
+            data={"group_id": str(self.group.id), "user_id": str(self.invitee.id)},
         )
 
     def _notify_leader_declined(self):
-        """
-        Notify the group leader that the invitation was declined.
+        """Notify the group leader that the invitation was declined."""
+        from backend_django.notifications.services import send_notification
 
-        TODO: Replace with real notification system (email, in-app, etc.)
-        """
-        logger.info(
-            "NOTIFICATION: %s declined invitation to group '%s' (leader: %s)",
-            self.invitee.get_full_name() or self.invitee.email,
-            self.group.name,
-            self.group.leader.email,
+        invitee_name = self.invitee.get_full_name() or self.invitee.email
+        send_notification(
+            recipient=self.group.leader,
+            notification_type="group.invitation_declined",
+            title="Invitation refusée",
+            message=f"{invitee_name} a décliné l'invitation au groupe « {self.group.name} ».",
+            data={"group_id": str(self.group.id), "user_id": str(self.invitee.id)},
         )

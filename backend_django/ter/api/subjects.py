@@ -462,6 +462,18 @@ class TERSubjectController(BaseAPI):
         subject.status = SubjectStatus.VALIDATED
         subject.save()
 
+        # Notify subject creator
+        if subject.professor:
+            from backend_django.notifications.services import send_notification
+
+            send_notification(
+                recipient=subject.professor,
+                notification_type="ter.subject_validated",
+                title="Sujet TER validé",
+                message=f"Votre sujet « {subject.title} » a été validé.",
+                data={"subject_id": str(subject.id)},
+            )
+
         return 200, subject_to_detail_schema(subject)
 
     @http_post(
@@ -494,6 +506,18 @@ class TERSubjectController(BaseAPI):
         subject.status = SubjectStatus.REJECTED
         subject.rejection_reason = data.reason
         subject.save()
+
+        # Notify subject creator
+        if subject.professor:
+            from backend_django.notifications.services import send_notification
+
+            send_notification(
+                recipient=subject.professor,
+                notification_type="ter.subject_rejected",
+                title="Sujet TER refusé",
+                message=f"Votre sujet « {subject.title} » a été refusé. Motif : {data.reason}",
+                data={"subject_id": str(subject.id), "reason": data.reason},
+            )
 
         return 200, subject_to_detail_schema(subject)
 

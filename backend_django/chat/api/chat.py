@@ -288,6 +288,20 @@ class ChatController(BaseAPI):
         # Update conversation modified time
         conv.save()
 
+        # Notify other participants
+        from backend_django.notifications.services import send_bulk_notifications
+
+        other_participants = conv.participants.exclude(id=request.user.id)
+        if other_participants.exists():
+            sender_name = request.user.get_full_name() or request.user.email
+            send_bulk_notifications(
+                recipients=list(other_participants),
+                notification_type="chat.new_message",
+                title="Nouveau message",
+                message=f"{sender_name} vous a envoyé un message.",
+                data={"conversation_id": str(conv.id), "message_id": str(message.id)},
+            )
+
         return 201, MessageSentSchema(
             success=True,
             message=message_to_schema(message, request.user),

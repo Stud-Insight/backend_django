@@ -95,6 +95,7 @@ LOCAL_APPS = [
     "backend_django.stages",
     "backend_django.groups",
     "backend_django.algorithms",
+    "backend_django.notifications",
 ]
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

@@ -417,6 +417,17 @@ class StageOfferApplicationController(BaseAPI):
         application.decision_by = request.user
         application.save()
 
+        # Notify student
+        from backend_django.notifications.services import send_notification
+
+        send_notification(
+            recipient=application.student,
+            notification_type="stage.application_accepted",
+            title="Candidature acceptée",
+            message=f"Votre candidature pour « {application.offer.title} » a été acceptée.",
+            data={"application_id": str(application.id), "offer_id": str(application.offer.id)},
+        )
+
         return 200, application_to_detail_schema(application)
 
     @http_post(
@@ -462,7 +473,20 @@ class StageOfferApplicationController(BaseAPI):
         application.rejection_reason = data.reason
         application.save()
 
-        # TODO: 5.10 - Notify rejected applicant (blocked by Epic 7)
+        # Notify rejected applicant (resolves 5.10 TODO)
+        from backend_django.notifications.services import send_notification
+
+        send_notification(
+            recipient=application.student,
+            notification_type="stage.application_rejected",
+            title="Candidature refusée",
+            message=f"Votre candidature pour « {application.offer.title} » a été refusée.",
+            data={
+                "application_id": str(application.id),
+                "offer_id": str(application.offer.id),
+                "reason": data.reason,
+            },
+        )
 
         return 200, application_to_detail_schema(application)
 
@@ -537,5 +561,26 @@ class StageOfferApplicationController(BaseAPI):
                 offer__stage_period=application.offer.stage_period,
                 status=ApplicationStatus.PENDING,
             ).exclude(id=application.id).update(status=ApplicationStatus.WITHDRAWN)
+
+        # Notify student of confirmation
+        from backend_django.notifications.services import send_notification
+
+        send_notification(
+            recipient=application.student,
+            notification_type="stage.application_confirmed",
+            title="Stage confirmé",
+            message=f"Votre stage « {application.offer.title} » est confirmé.",
+            data={"application_id": str(application.id), "offer_id": str(application.offer.id)},
+        )
+
+        # Notify academic supervisor if assigned
+        if academic_supervisor:
+            send_notification(
+                recipient=academic_supervisor,
+                notification_type="stage.supervisor_assigned",
+                title="Encadrement de stage",
+                message=f"Vous avez été assigné comme encadrant académique pour le stage de {request.user.get_full_name() or request.user.email}.",
+                data={"application_id": str(application.id), "student_id": str(request.user.id)},
+            )
 
         return 200, application_to_detail_schema(application)

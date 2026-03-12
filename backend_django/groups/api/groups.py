@@ -445,6 +445,18 @@ class GroupController(BaseAPI):
             message=data.message,
         )
 
+        # Notify invitee
+        from backend_django.notifications.services import send_notification
+
+        inviter_name = request.user.get_full_name() or request.user.email
+        send_notification(
+            recipient=invitee,
+            notification_type="group.invitation_received",
+            title="Invitation à un groupe",
+            message=f"{inviter_name} vous invite à rejoindre le groupe « {group.name} ».",
+            data={"group_id": str(group.id), "invitation_id": str(invitation.id)},
+        )
+
         # Reload with related data
         invitation = GroupInvitation.objects.select_related(
             "group", "invitee", "invited_by"
@@ -992,6 +1004,17 @@ class GroupController(BaseAPI):
             ).to_response()
 
         group.members.remove(user)
+
+        # Notify removed member
+        from backend_django.notifications.services import send_notification
+
+        send_notification(
+            recipient=user,
+            notification_type="group.member_removed",
+            title="Retrait du groupe",
+            message=f"Vous avez été retiré du groupe « {group.name} ».",
+            data={"group_id": str(group.id)},
+        )
 
         # Auto-reopen if needed
         if group.status == GroupStatus.FORME and group.member_count < 2:

@@ -94,11 +94,25 @@ def run_ter_assignment_task(self, ter_period_id: str) -> dict:
                 )
 
             # Apply assignments to database
+            from backend_django.notifications.services import send_bulk_notifications
+
             for group_id, subject_id in result.assignments.items():
                 group = Group.objects.get(id=group_id)
                 group.assigned_subject_id = subject_id
                 group.close_group()  # Transition to cloture
                 group.save()
+
+                # Notify all group members of their assignment
+                subject = TERSubject.objects.get(id=subject_id)
+                members = list(group.members.all())
+                if members:
+                    send_bulk_notifications(
+                        recipients=members,
+                        notification_type="ter.subject_assigned",
+                        title="Sujet TER assigné",
+                        message=f"Votre groupe « {group.name} » a été assigné au sujet « {subject.title} ».",
+                        data={"group_id": str(group_id), "subject_id": str(subject_id)},
+                    )
 
             logger.info(
                 "TER assignment completed for %s: %d/%d assigned, avg rank: %.2f",

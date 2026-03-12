@@ -54,6 +54,7 @@ LOCAL_APPS = [
     "backend_django.ter",
     "backend_django.stages",
     "backend_django.groups",
+    "backend_django.notifications",
 ]
 
 for app in LOCAL_APPS:
