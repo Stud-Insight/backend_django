@@ -272,3 +272,35 @@ class StagePeriodController(BaseAPI):
         period.save()
 
         return 200, stage_period_to_detail_schema(period)
+
+    @http_post(
+        "/{period_id}/archive",
+        response={200: StagePeriodDetailSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="stage_periods_archive",
+    )
+    def archive_stage_period(self, request: HttpRequest, period_id: UUID):
+        """
+        Archive a Stage period (transition from closed to archived).
+
+        Archived periods become read-only. Only staff members can archive.
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        if not is_stage_admin(request.user):
+            return PermissionDeniedError(
+                "Seuls les responsables Stage peuvent archiver des periodes."
+            ).to_response()
+
+        period = get_object_or_404(StagePeriod, id=period_id)
+
+        if period.status != PeriodStatus.CLOSED:
+            return BadRequestError(
+                f"Impossible d'archiver une periode avec le statut '{period.status}'. "
+                "Seules les periodes cloturees peuvent etre archivees."
+            ).to_response()
+
+        period.status = PeriodStatus.ARCHIVED
+        period.save()
+
+        return 200, stage_period_to_detail_schema(period)

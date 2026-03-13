@@ -20,6 +20,7 @@ from django.utils import timezone
 from ninja_extra import api_controller, http_delete, http_get, http_post
 
 from backend_django.core.api import BaseAPI, IsAuthenticated
+from backend_django.core.guards import check_period_not_archived
 from backend_django.core.exceptions import (
     BadRequestError,
     ErrorSchema,
@@ -193,6 +194,10 @@ class StageApplicationController(BaseAPI):
             return NotAuthenticatedError().to_response()
 
         application = get_object_or_404(StageApplication, id=application_id)
+
+        error = check_period_not_archived(application.offer.stage_period)
+        if error:
+            return error
 
         if not application.can_be_withdrawn_by(request.user):
             if application.student_id != request.user.id:
@@ -391,6 +396,10 @@ class StageOfferApplicationController(BaseAPI):
             offer_id=offer_id,
         )
 
+        error = check_period_not_archived(application.offer.stage_period)
+        if error:
+            return error
+
         if not application.can_be_decided_by(request.user):
             return PermissionDeniedError(
                 "Vous n'avez pas les droits pour accepter cette candidature."
@@ -457,6 +466,10 @@ class StageOfferApplicationController(BaseAPI):
             offer_id=offer_id,
         )
 
+        error = check_period_not_archived(application.offer.stage_period)
+        if error:
+            return error
+
         if not application.can_be_decided_by(request.user):
             return PermissionDeniedError(
                 "Vous n'avez pas les droits pour rejeter cette candidature."
@@ -517,6 +530,10 @@ class StageOfferApplicationController(BaseAPI):
             id=application_id,
             offer_id=offer_id,
         )
+
+        error = check_period_not_archived(application.offer.stage_period)
+        if error:
+            return error
 
         if not application.can_be_confirmed_by(request.user):
             if application.student_id != request.user.id:

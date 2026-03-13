@@ -13,6 +13,7 @@ from django.shortcuts import get_object_or_404
 from ninja_extra import api_controller, http_get, http_post, http_delete, http_put
 
 from backend_django.core.api import BaseAPI, IsAuthenticated
+from backend_django.core.guards import check_period_not_archived
 from backend_django.core.exceptions import (
     AlreadyExistsError,
     BadRequestError,
@@ -243,6 +244,12 @@ class GroupController(BaseAPI):
             id=group_id,
         )
 
+        period = group.ter_period or group.stage_period
+        if period:
+            error = check_period_not_archived(period)
+            if error:
+                return error
+
         # Permission check
         if not group.is_leader(request.user) and not is_ter_admin(request.user):
             return PermissionDeniedError(
@@ -396,6 +403,12 @@ class GroupController(BaseAPI):
             return NotAuthenticatedError().to_response()
 
         group = get_object_or_404(Group, id=group_id)
+
+        period = group.ter_period or group.stage_period
+        if period:
+            error = check_period_not_archived(period)
+            if error:
+                return error
 
         # Check user is the leader
         if not group.is_leader(request.user):
@@ -599,6 +612,12 @@ class GroupController(BaseAPI):
 
         group = get_object_or_404(Group, id=group_id)
 
+        period = group.ter_period or group.stage_period
+        if period:
+            error = check_period_not_archived(period)
+            if error:
+                return error
+
         # Check user is a member
         if not group.is_member(request.user):
             return BadRequestError("Vous n'êtes pas membre de ce groupe.").to_response()
@@ -653,6 +672,12 @@ class GroupController(BaseAPI):
             Group.objects.select_related("leader", "ter_period", "stage_period").prefetch_related("members"),
             id=group_id,
         )
+
+        period = group.ter_period or group.stage_period
+        if period:
+            error = check_period_not_archived(period)
+            if error:
+                return error
 
         if not group.is_leader(request.user) and not is_ter_admin(request.user):
             return PermissionDeniedError(
@@ -709,6 +734,12 @@ class GroupController(BaseAPI):
             Group.objects.select_related("leader", "ter_period", "stage_period").prefetch_related("members"),
             id=group_id,
         )
+
+        period = group.ter_period or group.stage_period
+        if period:
+            error = check_period_not_archived(period)
+            if error:
+                return error
 
         # Check user is the leader
         if not group.is_leader(request.user):
@@ -919,6 +950,12 @@ class GroupController(BaseAPI):
             id=group_id,
         )
 
+        period = group.ter_period or group.stage_period
+        if period:
+            error = check_period_not_archived(period)
+            if error:
+                return error
+
         user = get_object_or_404(User, id=data.user_id)
 
         if group.is_member(user):
@@ -949,6 +986,12 @@ class GroupController(BaseAPI):
 
         group = get_object_or_404(Group, id=group_id)
 
+        period = group.ter_period or group.stage_period
+        if period:
+            error = check_period_not_archived(period)
+            if error:
+                return error
+
         # Only leader or TER admin can delete
         if not group.is_leader(request.user) and not is_ter_admin(request.user):
             return PermissionDeniedError(
@@ -977,6 +1020,12 @@ class GroupController(BaseAPI):
             .prefetch_related("members"),
             id=group_id,
         )
+
+        period = group.ter_period or group.stage_period
+        if period:
+            error = check_period_not_archived(period)
+            if error:
+                return error
 
         user = get_object_or_404(User, id=user_id)
 

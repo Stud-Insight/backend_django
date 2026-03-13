@@ -13,6 +13,7 @@ from django.utils import timezone
 from ninja_extra import api_controller, http_delete, http_get, http_post, http_put
 
 from backend_django.core.api import BaseAPI, IsAuthenticated
+from backend_django.core.guards import check_period_not_archived
 from backend_django.core.exceptions import (
     BadRequestError,
     ErrorSchema,
@@ -116,6 +117,11 @@ class TERGradingController(BaseAPI):
             return NotAuthenticatedError().to_response()
 
         group = get_object_or_404(Group, id=group_id)
+
+        if group.ter_period:
+            error = check_period_not_archived(group.ter_period)
+            if error:
+                return error
 
         # Check permission
         is_encadrant = is_encadrant_for_group(request.user, group)
@@ -233,6 +239,11 @@ class TERGradingController(BaseAPI):
 
         group = individual_grade.grade.group
 
+        if group.ter_period:
+            error = check_period_not_archived(group.ter_period)
+            if error:
+                return error
+
         # Check permission
         is_encadrant = is_encadrant_for_group(request.user, group)
         is_admin = is_ter_admin(request.user)
@@ -294,6 +305,11 @@ class TERGradingController(BaseAPI):
 
         group = get_object_or_404(Group, id=group_id)
 
+        if group.ter_period:
+            error = check_period_not_archived(group.ter_period)
+            if error:
+                return error
+
         # Check user is a member
         if not group.members.filter(id=request.user.id).exists():
             return PermissionDeniedError(
@@ -351,6 +367,11 @@ class TERGradingController(BaseAPI):
             return NotAuthenticatedError().to_response()
 
         group = get_object_or_404(Group, id=group_id)
+
+        if group.ter_period:
+            error = check_period_not_archived(group.ter_period)
+            if error:
+                return error
 
         # Check permission (admin only can finalize)
         if not is_ter_admin(request.user):
@@ -520,6 +541,11 @@ class TERPeerReviewController(BaseAPI):
 
         if not session:
             return BadRequestError("Aucune session de peer review active.").to_response()
+
+        if session.ter_period:
+            error = check_period_not_archived(session.ter_period)
+            if error:
+                return error
 
         if session.expires_at < timezone.now():
             return BadRequestError("La période de peer review est terminée.").to_response()

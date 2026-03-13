@@ -10,6 +10,7 @@ from django.shortcuts import get_object_or_404
 from ninja_extra import api_controller, http_delete, http_get, http_post, http_put
 
 from backend_django.core.api import BaseAPI, IsAuthenticated
+from backend_django.core.guards import check_period_not_archived
 from backend_django.core.exceptions import (
     BadRequestError,
     ErrorSchema,
@@ -273,6 +274,10 @@ class StageOfferController(BaseAPI):
 
         offer = get_object_or_404(StageOffer, id=offer_id)
 
+        error = check_period_not_archived(offer.stage_period)
+        if error:
+            return error
+
         if not offer.can_be_managed_by(request.user):
             return PermissionDeniedError(
                 "Vous n'avez pas les droits pour soumettre cette offre."
@@ -310,6 +315,10 @@ class StageOfferController(BaseAPI):
 
         offer = get_object_or_404(StageOffer, id=offer_id)
 
+        error = check_period_not_archived(offer.stage_period)
+        if error:
+            return error
+
         if offer.status != OfferStatus.SUBMITTED:
             return BadRequestError(
                 f"Impossible de valider une offre avec le statut '{offer.status}'."
@@ -341,6 +350,10 @@ class StageOfferController(BaseAPI):
             ).to_response()
 
         offer = get_object_or_404(StageOffer, id=offer_id)
+
+        error = check_period_not_archived(offer.stage_period)
+        if error:
+            return error
 
         if offer.status != OfferStatus.SUBMITTED:
             return BadRequestError(

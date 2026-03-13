@@ -117,6 +117,14 @@ class BadRequestError(APIException):
     message = "Requête invalide."
 
 
+class ArchivedError(APIException):
+    """Attempted modification on archived data."""
+
+    status_code = 403
+    code = "ARCHIVED"
+    message = "Impossible de modifier des données archivées."
+
+
 # File Exceptions
 class FileTooLargeError(APIException):
     """File exceeds size limit."""

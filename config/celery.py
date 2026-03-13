@@ -25,6 +25,10 @@ app.conf.beat_schedule = {
         "task": "backend_django.grading.tasks.cleanup_expired_peer_review_sessions_async",
         "schedule": crontab(hour="*/6"),  # Every 6 hours
     },
+    "rgpd-anonymize-expired-archives": {
+        "task": "backend_django.core.tasks.rgpd_anonymize_expired_archives",
+        "schedule": crontab(hour=3, minute=0, day_of_week=0),  # Weekly, Sunday 3am
+    },
 }
 
 

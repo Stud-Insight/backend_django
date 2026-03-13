@@ -10,6 +10,7 @@ from django.shortcuts import get_object_or_404
 from ninja_extra import api_controller, http_delete, http_get, http_post, http_put
 
 from backend_django.core.api import BaseAPI, IsAuthenticated
+from backend_django.core.guards import check_period_not_archived
 from backend_django.core.exceptions import (
     BadRequestError,
     ErrorSchema,
@@ -454,6 +455,11 @@ class TERSubjectController(BaseAPI):
 
         subject = get_object_or_404(TERSubject, id=subject_id)
 
+        if subject.ter_period:
+            error = check_period_not_archived(subject.ter_period)
+            if error:
+                return error
+
         if subject.status != SubjectStatus.SUBMITTED:
             return BadRequestError(
                 f"Impossible de valider un sujet avec le statut '{subject.status}'."
@@ -497,6 +503,11 @@ class TERSubjectController(BaseAPI):
             ).to_response()
 
         subject = get_object_or_404(TERSubject, id=subject_id)
+
+        if subject.ter_period:
+            error = check_period_not_archived(subject.ter_period)
+            if error:
+                return error
 
         if subject.status != SubjectStatus.SUBMITTED:
             return BadRequestError(

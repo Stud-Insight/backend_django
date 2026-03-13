@@ -11,6 +11,7 @@ from django.shortcuts import get_object_or_404
 from ninja_extra import api_controller, http_delete, http_get, http_post, http_put
 
 from backend_django.core.api import BaseAPI, IsAuthenticated
+from backend_django.core.guards import check_period_not_archived
 from backend_django.core.exceptions import (
     AlreadyExistsError,
     BadRequestError,
@@ -322,6 +323,38 @@ class TERPeriodController(BaseAPI):
             ).to_response()
 
         period.status = PeriodStatus.CLOSED
+        period.save()
+
+        return 200, ter_period_to_detail_schema(period)
+
+    @http_post(
+        "/{period_id}/archive",
+        response={200: TERPeriodDetailSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="ter_periods_archive",
+    )
+    def archive_ter_period(self, request: HttpRequest, period_id: UUID):
+        """
+        Archive a TER period (transition from closed to archived).
+
+        Archived periods become read-only. Only staff members can archive.
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        if not is_ter_admin(request.user):
+            return PermissionDeniedError(
+                "Seuls les responsables TER peuvent archiver des periodes."
+            ).to_response()
+
+        period = get_object_or_404(TERPeriod, id=period_id)
+
+        if period.status != PeriodStatus.CLOSED:
+            return BadRequestError(
+                f"Impossible d'archiver une periode avec le statut '{period.status}'. "
+                "Seules les periodes cloturees peuvent etre archivees."
+            ).to_response()
+
+        period.status = PeriodStatus.ARCHIVED
         period.save()
 
         return 200, ter_period_to_detail_schema(period)
@@ -652,6 +685,10 @@ class TERPeriodController(BaseAPI):
 
         period = get_object_or_404(TERPeriod, id=period_id)
 
+        error = check_period_not_archived(period)
+        if error:
+            return error
+
         try:
             student = User.objects.get(id=data.user_id)
         except User.DoesNotExist:
@@ -686,6 +723,10 @@ class TERPeriodController(BaseAPI):
             ).to_response()
 
         period = get_object_or_404(TERPeriod, id=period_id)
+
+        error = check_period_not_archived(period)
+        if error:
+            return error
 
         if not period.enrolled_students.filter(id=user_id).exists():
             return NotFoundError(
@@ -763,6 +804,11 @@ class TERPeriodController(BaseAPI):
             return PermissionDeniedError("Accès réservé aux responsables TER.").to_response()
 
         period = get_object_or_404(TERPeriod, id=period_id)
+
+        error = check_period_not_archived(period)
+        if error:
+            return error
+
         user = get_object_or_404(User, id=user_id)
 
         period.professors.add(user)
@@ -789,6 +835,11 @@ class TERPeriodController(BaseAPI):
             return PermissionDeniedError("Accès réservé aux responsables TER.").to_response()
 
         period = get_object_or_404(TERPeriod, id=period_id)
+
+        error = check_period_not_archived(period)
+        if error:
+            return error
+
         period.professors.remove(user_id)
 
         return 204, None
