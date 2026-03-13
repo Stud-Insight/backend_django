@@ -1,6 +1,7 @@
 """TER API controllers."""
 
 from .balancing import TERBalancingController
+from .dashboard import TERDashboardController
 from .deliverables import TERDeliverablesController
 from .grading import TERGradingController, TERPeerReviewController
 from .periods import TERPeriodController
@@ -13,6 +14,7 @@ __all__ = [
     "TERSubjectController",
     "TERRankingController",
     "TERBalancingController",
+    "TERDashboardController",
     "TERDeliverablesController",
     "TERGradingController",
     "TERPeerReviewController",
