@@ -178,6 +178,30 @@ class Group(BaseModel):
                 period.min_group_size,
             )
 
+    def check_and_auto_reopen(self):
+        """
+        Auto-transition back to 'ouvert' if group drops below min_group_size.
+
+        Called after:
+        - Member leaves the group
+        - Leader removes a member
+        """
+        if self.status != GroupStatus.FORME:
+            return
+
+        period = self.ter_period
+        min_size = period.min_group_size if period else 2
+
+        if self.member_count < min_size:
+            self.reopen_group()
+            self.save(update_fields=["status"])
+            logger.info(
+                "AUTO-TRANSITION: Group '%s' reopened (has %d members, min_group_size=%d)",
+                self.name,
+                self.member_count,
+                min_size,
+            )
+
     # FSM Transitions
 
     @transition(field=status, source=GroupStatus.OUVERT, target=GroupStatus.FORME)
@@ -472,6 +496,22 @@ class GroupInvitation(BaseModel):
 
             if not group.can_add_member():
                 raise ValueError("Group cannot accept new members")
+
+            # Check invitee is not already in another group for the same period
+            period_filter = {}
+            if group.ter_period_id:
+                period_filter["ter_period"] = group.ter_period_id
+            elif group.stage_period_id:
+                period_filter["stage_period"] = group.stage_period_id
+            if period_filter:
+                existing_group = Group.objects.filter(
+                    members=self.invitee, **period_filter
+                ).exclude(id=group.id).first()
+                if existing_group:
+                    raise ValueError(
+                        f"Vous êtes déjà membre du groupe « {existing_group.name} ». "
+                        "Quittez-le avant d'accepter cette invitation."
+                    )
 
             self.status = InvitationStatus.ACCEPTED
             self.responded_at = timezone.now()

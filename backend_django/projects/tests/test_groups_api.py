@@ -46,6 +46,35 @@ def another_student(db):
 
 
 @pytest.fixture
+def third_student(db):
+    """Create a third student user."""
+    user = UserFactory(
+        email="student3@test.com",
+        first_name="Third",
+        last_name="Student",
+        is_active=True,
+    )
+    user.set_password("testpass123")
+    user.save()
+    return user
+
+
+@pytest.fixture
+def third_client(third_student):
+    """Return a client authenticated as the third student."""
+    client = Client()
+    response = client.get("/api/auth/csrf")
+    csrf_token = response.json()["csrf_token"]
+    client.post(
+        "/api/auth/login",
+        data={"email": third_student.email, "password": "testpass123"},
+        content_type="application/json",
+        HTTP_X_CSRFTOKEN=csrf_token,
+    )
+    return client
+
+
+@pytest.fixture
 def ter_period_open(db):
     """Create an open TER period in formation phase."""
     today = date.today()
@@ -697,6 +726,155 @@ class TestRespondToInvitationEndpoint:
         )
         assert response.status_code == 403
 
+    def test_accept_blocked_if_already_in_another_group_same_period(
+        self, another_client, ter_period_open, student_user, another_student, third_student
+    ):
+        """Test that accepting an invitation fails if the invitee is already in another group for the same period."""
+        from backend_django.groups.models import GroupInvitation
+
+        # Create group A with another_student already a member
+        group_a = StudentGroup.objects.create(
+            name="Group A",
+            leader=third_student,
+            project_type="TER",
+            ter_period=ter_period_open,
+        )
+        group_a.members.add(another_student)
+
+        # Create group B and invite another_student
+        group_b = StudentGroup.objects.create(
+            name="Group B",
+            leader=student_user,
+            project_type="TER",
+            ter_period=ter_period_open,
+        )
+        invitation = GroupInvitation.objects.create(
+            group=group_b,
+            invitee=another_student,
+            invited_by=student_user,
+        )
+
+        response = another_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = another_client.post(
+            f"/api/groups/invitations/{invitation.id}/respond",
+            data={"accept": True},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 400
+        assert "déjà membre" in response.json()["message"]
+
+        # Verify user was NOT added to group B
+        updated_group_b = StudentGroup.objects.get(id=group_b.id)
+        assert not updated_group_b.is_member(another_student)
+
+    def test_accept_allowed_if_in_group_for_different_period(
+        self, another_client, ter_period_open, student_user, another_student, third_student
+    ):
+        """Test that being in a group for a different period does not block acceptance."""
+        from backend_django.groups.models import GroupInvitation
+
+        today = date.today()
+        other_period = TERPeriod.objects.create(
+            name="TER Other Period",
+            academic_year="2023-2024",
+            status=PeriodStatus.OPEN,
+            group_formation_start=today - timedelta(days=5),
+            group_formation_end=today + timedelta(days=25),
+            subject_selection_start=today + timedelta(days=31),
+            subject_selection_end=today + timedelta(days=60),
+            assignment_date=today + timedelta(days=61),
+            project_start=today + timedelta(days=70),
+            project_end=today + timedelta(days=180),
+            min_group_size=2,
+            max_group_size=4,
+        )
+
+        # another_student is in a group for a DIFFERENT period
+        group_other = StudentGroup.objects.create(
+            name="Other Period Group",
+            leader=third_student,
+            project_type="TER",
+            ter_period=other_period,
+        )
+        group_other.members.add(another_student)
+
+        # Invite to a group in ter_period_open
+        group_b = StudentGroup.objects.create(
+            name="Group B",
+            leader=student_user,
+            project_type="TER",
+            ter_period=ter_period_open,
+        )
+        invitation = GroupInvitation.objects.create(
+            group=group_b,
+            invitee=another_student,
+            invited_by=student_user,
+        )
+
+        response = another_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = another_client.post(
+            f"/api/groups/invitations/{invitation.id}/respond",
+            data={"accept": True},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 200
+
+        # Verify user WAS added to group B
+        updated_group_b = StudentGroup.objects.get(id=group_b.id)
+        assert updated_group_b.is_member(another_student)
+
+    def test_accept_allowed_after_leaving_previous_group(
+        self, another_client, ter_period_open, student_user, another_student, third_student
+    ):
+        """Test that leaving a group then accepting a new invitation works."""
+        from backend_django.groups.models import GroupInvitation
+
+        # another_student is in group A
+        group_a = StudentGroup.objects.create(
+            name="Group A",
+            leader=third_student,
+            project_type="TER",
+            ter_period=ter_period_open,
+        )
+        group_a.members.add(another_student)
+
+        # Invite to group B
+        group_b = StudentGroup.objects.create(
+            name="Group B",
+            leader=student_user,
+            project_type="TER",
+            ter_period=ter_period_open,
+        )
+        invitation = GroupInvitation.objects.create(
+            group=group_b,
+            invitee=another_student,
+            invited_by=student_user,
+        )
+
+        # another_student leaves group A first
+        group_a.members.remove(another_student)
+
+        response = another_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = another_client.post(
+            f"/api/groups/invitations/{invitation.id}/respond",
+            data={"accept": True},
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 200
+
+        # Verify user is in group B, not in group A
+        assert StudentGroup.objects.get(id=group_b.id).is_member(another_student)
+        assert not StudentGroup.objects.get(id=group_a.id).is_member(another_student)
+
 
 @pytest.mark.django_db
 class TestMyInvitationsEndpoint:
@@ -1203,13 +1381,22 @@ class TestAutoGroupStatusTransitions:
 class TestCloseGroupEndpoint:
     """Tests for POST /api/groups/{id}/close."""
 
-    def test_leader_can_close_formed_group(self, authenticated_client, ter_period_open, student_user, another_student):
-        """Test leader can close a formed group."""
+    def test_leader_can_close_formed_group_with_subject(self, authenticated_client, ter_period_open, student_user, another_student):
+        """Test leader can close a formed group that has an assigned subject."""
+        from backend_django.ter.models import TERSubject
+
+        subject = TERSubject.objects.create(
+            title="Test Subject",
+            description="A test subject",
+            domain="Informatique",
+            ter_period=ter_period_open,
+        )
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
             project_type="TER",
             ter_period=ter_period_open,
+            assigned_subject=subject,
         )
         group.members.add(another_student)
         group.form_group()
@@ -1231,6 +1418,30 @@ class TestCloseGroupEndpoint:
 
         updated_group = StudentGroup.objects.get(id=group.id)
         assert updated_group.status == GroupStatus.CLOTURE
+
+    def test_cannot_close_formed_group_without_subject(self, authenticated_client, ter_period_open, student_user, another_student):
+        """Test leader cannot close a formed group before subject assignment."""
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type="TER",
+            ter_period=ter_period_open,
+        )
+        group.members.add(another_student)
+        group.form_group()
+        group.save()
+        assert group.status == GroupStatus.FORME
+
+        response = authenticated_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = authenticated_client.post(
+            f"/api/groups/{group.id}/close",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 400
+        assert "affectation" in response.json()["message"]
 
     def test_cannot_close_open_group(self, authenticated_client, ter_period_open, student_user):
         """Test cannot close a group that is still open (ouvert → clôturé is invalid)."""
@@ -1255,11 +1466,20 @@ class TestCloseGroupEndpoint:
 
     def test_cannot_close_already_closed_group(self, authenticated_client, ter_period_open, student_user, another_student):
         """Test cannot close a group that is already closed."""
+        from backend_django.ter.models import TERSubject
+
+        subject = TERSubject.objects.create(
+            title="Test Subject",
+            description="A test subject",
+            domain="Informatique",
+            ter_period=ter_period_open,
+        )
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
             project_type="TER",
             ter_period=ter_period_open,
+            assigned_subject=subject,
         )
         group.members.add(another_student)
         group.form_group()
@@ -1302,11 +1522,20 @@ class TestCloseGroupEndpoint:
 
     def test_closed_group_prevents_leave(self, another_client, ter_period_open, student_user, another_student):
         """Test members cannot leave a closed group."""
+        from backend_django.ter.models import TERSubject
+
+        subject = TERSubject.objects.create(
+            title="Test Subject",
+            description="A test subject",
+            domain="Informatique",
+            ter_period=ter_period_open,
+        )
         group = StudentGroup.objects.create(
             name="Test Group",
             leader=student_user,
             project_type="TER",
             ter_period=ter_period_open,
+            assigned_subject=subject,
         )
         group.members.add(another_student)
         group.form_group()
@@ -1323,6 +1552,329 @@ class TestCloseGroupEndpoint:
         )
         assert response.status_code == 400
         assert "clôturé" in response.json()["message"]
+
+
+@pytest.mark.django_db
+class TestDeleteGroupEndpoint:
+    """Tests for DELETE /api/groups/{id}."""
+
+    def test_leader_can_delete_open_group(self, authenticated_client, ter_period_open, student_user):
+        """Test leader can delete an open group without subject."""
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type="TER",
+            ter_period=ter_period_open,
+        )
+
+        response = authenticated_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = authenticated_client.delete(
+            f"/api/groups/{group.id}",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 200
+        assert not StudentGroup.objects.filter(id=group.id).exists()
+
+    def test_leader_cannot_delete_closed_group(self, authenticated_client, ter_period_open, student_user, another_student):
+        """Test leader cannot delete a closed group."""
+        from backend_django.ter.models import TERSubject
+
+        subject = TERSubject.objects.create(
+            title="Test Subject",
+            description="A test subject",
+            domain="Informatique",
+            ter_period=ter_period_open,
+        )
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type="TER",
+            ter_period=ter_period_open,
+            assigned_subject=subject,
+        )
+        group.members.add(another_student)
+        group.form_group()
+        group.close_group()
+        group.save()
+
+        response = authenticated_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = authenticated_client.delete(
+            f"/api/groups/{group.id}",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 400
+        assert "clôturé" in response.json()["message"]
+        assert StudentGroup.objects.filter(id=group.id).exists()
+
+    def test_leader_cannot_delete_group_with_assigned_subject(self, authenticated_client, ter_period_open, student_user):
+        """Test leader cannot delete a group with an assigned subject."""
+        from backend_django.ter.models import TERSubject
+
+        subject = TERSubject.objects.create(
+            title="Test Subject",
+            description="A test subject",
+            domain="Informatique",
+            ter_period=ter_period_open,
+        )
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type="TER",
+            ter_period=ter_period_open,
+            assigned_subject=subject,
+        )
+
+        response = authenticated_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = authenticated_client.delete(
+            f"/api/groups/{group.id}",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 400
+        assert "sujet assigné" in response.json()["message"]
+        assert StudentGroup.objects.filter(id=group.id).exists()
+
+    def test_leader_cannot_delete_group_with_members(self, authenticated_client, ter_period_open, student_user, another_student):
+        """Test leader cannot delete a group that still has other members."""
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type="TER",
+            ter_period=ter_period_open,
+        )
+        group.members.add(another_student)
+
+        response = authenticated_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = authenticated_client.delete(
+            f"/api/groups/{group.id}",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 400
+        assert "membres" in response.json()["message"]
+        assert StudentGroup.objects.filter(id=group.id).exists()
+
+    def test_non_leader_cannot_delete(self, another_client, ter_period_open, student_user, another_student):
+        """Test non-leader member cannot delete the group."""
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type="TER",
+            ter_period=ter_period_open,
+        )
+        group.members.add(another_student)
+
+        response = another_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = another_client.delete(
+            f"/api/groups/{group.id}",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 403
+        assert StudentGroup.objects.filter(id=group.id).exists()
+
+
+@pytest.mark.django_db
+class TestReopenGroupEndpoint:
+    """Tests for POST /api/groups/{id}/reopen."""
+
+    def test_leader_can_reopen_formed_group(self, authenticated_client, ter_period_open, student_user, another_student):
+        """Test leader can reopen a formed group."""
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type="TER",
+            ter_period=ter_period_open,
+        )
+        group.members.add(another_student)
+        group.form_group()
+        group.save()
+        assert group.status == GroupStatus.FORME
+
+        response = authenticated_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = authenticated_client.post(
+            f"/api/groups/{group.id}/reopen",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "ouvert"
+
+    def test_cannot_reopen_already_open_group(self, authenticated_client, ter_period_open, student_user):
+        """Test cannot reopen a group that is already open."""
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type="TER",
+            ter_period=ter_period_open,
+        )
+
+        response = authenticated_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = authenticated_client.post(
+            f"/api/groups/{group.id}/reopen",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 400
+        assert "déjà ouvert" in response.json()["message"]
+
+    def test_cannot_reopen_closed_group(self, authenticated_client, ter_period_open, student_user, another_student):
+        """Test cannot reopen a closed group."""
+        from backend_django.ter.models import TERSubject
+
+        subject = TERSubject.objects.create(
+            title="Test Subject",
+            description="A test subject",
+            domain="Informatique",
+            ter_period=ter_period_open,
+        )
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type="TER",
+            ter_period=ter_period_open,
+            assigned_subject=subject,
+        )
+        group.members.add(another_student)
+        group.form_group()
+        group.close_group()
+        group.save()
+
+        response = authenticated_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = authenticated_client.post(
+            f"/api/groups/{group.id}/reopen",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 400
+        assert "clôturé" in response.json()["message"]
+
+    def test_non_leader_cannot_reopen(self, another_client, ter_period_open, student_user, another_student):
+        """Test non-leader cannot reopen a group."""
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type="TER",
+            ter_period=ter_period_open,
+        )
+        group.members.add(another_student)
+        group.form_group()
+        group.save()
+
+        response = another_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = another_client.post(
+            f"/api/groups/{group.id}/reopen",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 403
+
+
+@pytest.mark.django_db
+class TestAutoReopenOnMemberDrop:
+    """Tests for auto-reopen when member count drops below min_group_size."""
+
+    def test_leave_auto_reopens_below_min_size(self, another_client, ter_period_open, student_user, another_student):
+        """Test leaving a formed group auto-reopens if below min_group_size."""
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type="TER",
+            ter_period=ter_period_open,
+        )
+        group.members.add(another_student)
+        group.form_group()
+        group.save()
+        assert group.status == GroupStatus.FORME
+        # min_group_size is 2, leaving drops to 1 member (leader only)
+
+        response = another_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = another_client.post(
+            f"/api/groups/{group.id}/leave",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 200
+
+        updated_group = StudentGroup.objects.get(id=group.id)
+        assert updated_group.status == GroupStatus.OUVERT
+
+    def test_remove_member_auto_reopens_below_min_size(self, authenticated_client, ter_period_open, student_user, another_student):
+        """Test removing a member auto-reopens if below min_group_size."""
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type="TER",
+            ter_period=ter_period_open,
+        )
+        group.members.add(another_student)
+        group.form_group()
+        group.save()
+        assert group.status == GroupStatus.FORME
+
+        response = authenticated_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = authenticated_client.delete(
+            f"/api/groups/{group.id}/members/{another_student.id}",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 200
+
+        updated_group = StudentGroup.objects.get(id=group.id)
+        assert updated_group.status == GroupStatus.OUVERT
+
+    def test_stays_formed_if_still_above_min_size(self, authenticated_client, ter_period_open, student_user, another_student, third_student):
+        """Test group stays formed if still >= min_group_size after removal."""
+        # min_group_size is 2, group has 3 members, removing one leaves 2 -> stays formed
+        group = StudentGroup.objects.create(
+            name="Test Group",
+            leader=student_user,
+            project_type="TER",
+            ter_period=ter_period_open,
+        )
+        group.members.add(another_student)
+        group.members.add(third_student)
+        group.form_group()
+        group.save()
+        assert group.member_count == 3
+
+        response = authenticated_client.get("/api/auth/csrf")
+        csrf_token = response.json()["csrf_token"]
+
+        response = authenticated_client.delete(
+            f"/api/groups/{group.id}/members/{third_student.id}",
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf_token,
+        )
+        assert response.status_code == 200
+
+        updated_group = StudentGroup.objects.get(id=group.id)
+        assert updated_group.status == GroupStatus.FORME
+        assert updated_group.member_count == 2
 
 
 @pytest.mark.django_db

@@ -633,15 +633,8 @@ class GroupController(BaseAPI):
         # Remove user from group
         group.members.remove(request.user)
 
-        # Auto-revert: forme -> ouvert when member count drops below 2
-        if group.status == GroupStatus.FORME and group.member_count < 2:
-            group.reopen_group()
-            group.save()
-            logger.info(
-                "AUTO-TRANSITION: Group '%s' reverted to ouvert (now has %d members)",
-                group.name,
-                group.member_count,
-            )
+        # Auto-revert: forme -> ouvert when member count drops below min_group_size
+        group.check_and_auto_reopen()
 
         # Log notification (placeholder for real notification system)
         logger.info(
@@ -725,6 +718,7 @@ class GroupController(BaseAPI):
 
         Only the leader can close a group.
         Group must be in "forme" status (has 2+ members).
+        Group must have an assigned subject (post-affectation only).
         Once closed, no members can join or leave.
         """
         if not request.user.is_authenticated:
@@ -752,6 +746,10 @@ class GroupController(BaseAPI):
         if group.status == GroupStatus.CLOTURE:
             return BadRequestError("Le groupe est déjà clôturé.").to_response()
 
+        # Check group has an assigned subject (clôture only after affectation)
+        if not group.assigned_subject_id:
+            return BadRequestError("Impossible de clôturer un groupe avant l'affectation des sujets.").to_response()
+
         # Transition to cloture
         try:
             group.close_group()
@@ -767,6 +765,54 @@ class GroupController(BaseAPI):
         )
 
         # Reload group
+        group = Group.objects.select_related(
+            "leader", "ter_period", "stage_period"
+        ).prefetch_related("members").get(id=group.id)
+
+        return 200, group_to_detail_schema(group)
+
+    @http_post(
+        "/{group_id}/reopen",
+        response={200: GroupDetailSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="groups_reopen",
+    )
+    def reopen_group(self, request: HttpRequest, group_id: UUID):
+        """
+        Reopen a formed group (forme -> ouvert).
+
+        Only the leader can reopen a group.
+        Group must be in "forme" status (not yet closed).
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        group = get_object_or_404(
+            Group.objects.select_related("leader", "ter_period", "stage_period").prefetch_related("members"),
+            id=group_id,
+        )
+
+        period = group.ter_period or group.stage_period
+        if period:
+            error = check_period_not_archived(period)
+            if error:
+                return error
+
+        # Check user is the leader
+        if not group.is_leader(request.user):
+            return PermissionDeniedError("Seul le leader peut rouvrir le groupe.").to_response()
+
+        if group.status == GroupStatus.OUVERT:
+            return BadRequestError("Le groupe est déjà ouvert.").to_response()
+
+        if group.status == GroupStatus.CLOTURE:
+            return BadRequestError("Impossible de rouvrir un groupe clôturé.").to_response()
+
+        try:
+            group.reopen_group()
+            group.save()
+        except Exception as e:
+            return BadRequestError(f"Impossible de rouvrir le groupe: {e!s}").to_response()
+
         group = Group.objects.select_related(
             "leader", "ter_period", "stage_period"
         ).prefetch_related("members").get(id=group.id)
@@ -976,7 +1022,7 @@ class GroupController(BaseAPI):
 
     @http_delete(
         "/{group_id}",
-        response={200: MessageSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        response={200: MessageSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
         url_name="groups_delete",
     )
     def delete_group(self, request: HttpRequest, group_id: UUID):
@@ -996,6 +1042,24 @@ class GroupController(BaseAPI):
         if not group.is_leader(request.user) and not is_ter_admin(request.user):
             return PermissionDeniedError(
                 "Seul le leader ou un administrateur peut supprimer le groupe."
+            ).to_response()
+
+        # Cannot delete a closed group
+        if group.status == GroupStatus.CLOTURE and not is_ter_admin(request.user):
+            return BadRequestError(
+                "Impossible de supprimer un groupe clôturé."
+            ).to_response()
+
+        # Cannot delete if group has an assigned subject
+        if group.assigned_subject_id and not is_ter_admin(request.user):
+            return BadRequestError(
+                "Impossible de supprimer un groupe avec un sujet assigné."
+            ).to_response()
+
+        # Cannot delete if group has other members (leader must remove them first)
+        if group.member_count > 1 and not is_ter_admin(request.user):
+            return BadRequestError(
+                "Impossible de supprimer un groupe avec des membres. Retirez-les d'abord."
             ).to_response()
 
         group.delete()
@@ -1066,10 +1130,11 @@ class GroupController(BaseAPI):
         )
 
         # Auto-reopen if needed
-        if group.status == GroupStatus.FORME and group.member_count < 2:
-            group.reopen_group()
-            group.save()
+        group.check_and_auto_reopen()
 
-        group.refresh_from_db()
+        # Reload to get fresh state (refresh_from_db conflicts with django-fsm)
+        group = Group.objects.select_related(
+            "leader", "ter_period", "stage_period"
+        ).prefetch_related("members").get(id=group.id)
 
         return 200, group_to_detail_schema(group)
