@@ -147,6 +147,37 @@ def compute_phase(period: TERPeriod) -> StudentPhaseSchema:
 class TERDashboardController(BaseAPI):
     """API for TER dashboards."""
 
+    # ==================== Encadrant Periods ====================
+
+    @http_get(
+        "/encadrant/periods",
+        response={200: list[dict], 401: ErrorSchema},
+        url_name="ter_dashboard_encadrant_periods",
+    )
+    def encadrant_periods(self, request: HttpRequest):
+        """
+        Get TER periods where the current user is professor or supervisor of at least one subject.
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        user = request.user
+        period_ids = TERSubject.objects.filter(
+            Q(professor=user) | Q(supervisor=user)
+        ).values_list("ter_period_id", flat=True).distinct()
+
+        periods = TERPeriod.objects.filter(id__in=period_ids).order_by("-academic_year", "-created")
+
+        return 200, [
+            {
+                "id": str(p.id),
+                "name": p.name,
+                "academic_year": p.academic_year,
+                "status": p.status,
+            }
+            for p in periods
+        ]
+
     # ==================== 12-3: Encadrant Dashboard ====================
 
     @http_get(
