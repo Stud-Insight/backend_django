@@ -405,3 +405,139 @@ class StageApplication(BaseModel):
     def is_modifiable(self) -> bool:
         """Check if application can still be modified."""
         return self.status == ApplicationStatus.PENDING
+
+
+class StageGradeStatus(models.TextChoices):
+    """Status choices for stage grades."""
+
+    DRAFT = "draft", _("Brouillon")
+    SUBMITTED = "submitted", _("Soumis")
+    FINALIZED = "finalized", _("Finalise")
+
+
+class StageGrade(BaseModel):
+    """
+    Grade record for a confirmed stage application.
+
+    Contains both academic grade (from encadrant) and company grade (from externe),
+    with a final computed average.
+    """
+
+    application = models.OneToOneField(
+        StageApplication,
+        on_delete=models.CASCADE,
+        related_name="grade",
+        verbose_name=_("application"),
+    )
+    stage_period = models.ForeignKey(
+        StagePeriod,
+        on_delete=models.CASCADE,
+        related_name="grades",
+        verbose_name=_("internship period"),
+    )
+
+    # Academic grade (encadrant)
+    academic_grade = models.DecimalField(
+        _("academic grade"),
+        max_digits=4,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=_("Academic grade on 0-20 scale"),
+    )
+    academic_grade_comment = models.TextField(
+        _("academic grade comment"),
+        blank=True,
+    )
+    academic_graded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="stage_academic_grades_given",
+        verbose_name=_("academic graded by"),
+    )
+    academic_graded_at = models.DateTimeField(
+        _("academic graded at"),
+        null=True,
+        blank=True,
+    )
+
+    # Company grade (externe)
+    company_grade = models.DecimalField(
+        _("company grade"),
+        max_digits=4,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=_("Company grade on 0-20 scale"),
+    )
+    company_grade_comment = models.TextField(
+        _("company grade comment"),
+        blank=True,
+    )
+    company_graded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="stage_company_grades_given",
+        verbose_name=_("company graded by"),
+    )
+    company_graded_at = models.DateTimeField(
+        _("company graded at"),
+        null=True,
+        blank=True,
+    )
+
+    # Final computed grade
+    final_grade = models.DecimalField(
+        _("final grade"),
+        max_digits=4,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=_("Average of academic and company grades"),
+    )
+
+    # Status tracking
+    status = models.CharField(
+        _("status"),
+        max_length=20,
+        choices=StageGradeStatus.choices,
+        default=StageGradeStatus.DRAFT,
+    )
+    finalized_at = models.DateTimeField(
+        _("finalized at"),
+        null=True,
+        blank=True,
+    )
+    finalized_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="stage_grades_finalized",
+        verbose_name=_("finalized by"),
+    )
+
+    class Meta:
+        verbose_name = _("stage grade")
+        verbose_name_plural = _("stage grades")
+        ordering = ["-created"]
+
+    def __str__(self) -> str:
+        student = self.application.student
+        grade_str = f"{self.final_grade}/20" if self.final_grade else "Non note"
+        return f"{student.email} - {grade_str}"
+
+    def compute_final_grade(self):
+        """Compute the final grade as the average of academic and company grades."""
+        if self.academic_grade is not None and self.company_grade is not None:
+            self.final_grade = (self.academic_grade + self.company_grade) / 2
+        else:
+            self.final_grade = None
+
+    def is_modifiable(self) -> bool:
+        """Check if grade can still be modified."""
+        return self.status != StageGradeStatus.FINALIZED

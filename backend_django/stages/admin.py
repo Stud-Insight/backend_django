@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import StageFavorite, StageOffer, StagePeriod, StageRanking
+from .models import StageFavorite, StageGrade, StageOffer, StagePeriod, StageRanking
 
 
 @admin.register(StagePeriod)
@@ -30,3 +30,11 @@ class StageRankingAdmin(admin.ModelAdmin):
 class StageFavoriteAdmin(admin.ModelAdmin):
     list_display = ["student", "offer"]
     list_filter = ["offer__stage_period"]
+
+
+@admin.register(StageGrade)
+class StageGradeAdmin(admin.ModelAdmin):
+    list_display = ["application", "academic_grade", "company_grade", "final_grade", "status"]
+    list_filter = ["status", "stage_period"]
+    search_fields = ["application__student__email", "application__offer__title"]
+    ordering = ["-created"]
