@@ -124,6 +124,24 @@ class UserDetailSchema(UserListSchema):
     pass
 
 
+class ExternalUserSchema(Schema):
+    """Schema for external user pending validation."""
+
+    id: UUID
+    email: str
+    first_name: str
+    last_name: str
+    company_name: str
+    date_joined: datetime
+    external_validation_status: str
+
+
+class ExternalRejectSchema(Schema):
+    """Schema for rejecting an external account."""
+
+    reason: str
+
+
 class CSVImportErrorSchema(Schema):
     """Schema for a single CSV import error."""
 

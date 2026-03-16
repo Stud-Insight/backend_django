@@ -28,8 +28,11 @@ from backend_django.core.api import BaseAPI
 from backend_django.core.api import IsAuthenticated
 from backend_django.core.exceptions import BadRequestError
 from backend_django.core.exceptions import ErrorSchema
+from backend_django.core.exceptions import FileTooLargeError
 from backend_django.core.exceptions import NotAuthenticatedError
 from backend_django.core.exceptions import PermissionDeniedError
+
+MAX_CHAT_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
 from backend_django.users.models import User
 from backend_django.groups.models import Group
 
@@ -253,7 +256,7 @@ class ChatController(BaseAPI):
 
     @http_post(
         "/conversations/{conversation_id}/messages",
-        response={201: MessageSentSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        response={201: MessageSentSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema, 413: ErrorSchema},
         url_name="chat_messages_send",
     )
     def send_message(
@@ -270,6 +273,12 @@ class ChatController(BaseAPI):
         # On vérifie qu'il y a AU MOINS du texte ou un fichier
         if not content and not file:
             return BadRequestError("Le message ne peut pas être vide.").to_response()
+
+        # Validate file size (10 MB max)
+        if file and file.size > MAX_CHAT_FILE_SIZE_BYTES:
+            return FileTooLargeError(
+                "Fichier trop volumineux — max 10 Mo."
+            ).to_response()
 
         conv = get_object_or_404(Conversation, id=conversation_id)
 

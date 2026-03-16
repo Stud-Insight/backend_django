@@ -67,7 +67,7 @@ class AuthController(BaseAPI):
 
     @http_post(
         "/login",
-        response={200: LoginResponseSchema, 401: ErrorSchema, 400: ErrorSchema},
+        response={200: LoginResponseSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema},
         url_name="auth_login",
     )
     def login_view(self, request: HttpRequest, data: LoginSchema):
@@ -82,6 +82,19 @@ class AuthController(BaseAPI):
 
         if not user.is_active:
             return AccountDisabledError().to_response()
+
+        # Block external users pending validation
+        from backend_django.users.models import ExternalValidationStatus
+        if user.external_validation_status == ExternalValidationStatus.PENDING:
+            return 403, ErrorSchema(
+                code="EXTERNAL_PENDING",
+                message="Votre compte est en attente de validation par un administrateur.",
+            )
+        if user.external_validation_status == ExternalValidationStatus.REJECTED:
+            return 403, ErrorSchema(
+                code="EXTERNAL_REJECTED",
+                message="Votre demande de compte a été refusée.",
+            )
 
         login(request, user)
 

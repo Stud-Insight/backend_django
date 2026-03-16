@@ -3,6 +3,8 @@ User schemas for API requests and responses.
 """
 
 from backend_django.users.schemas.admin import CSVImportErrorSchema
+from backend_django.users.schemas.admin import ExternalRejectSchema
+from backend_django.users.schemas.admin import ExternalUserSchema
 from backend_django.users.schemas.admin import CSVImportResultSchema
 from backend_django.users.schemas.admin import RoleListSchema
 from backend_django.users.schemas.admin import RoleSchema
@@ -62,6 +64,8 @@ __all__ = [
     "RoleSchema",
     "RoleListSchema",
     "SetUserRoleSchema",
+    "ExternalUserSchema",
+    "ExternalRejectSchema",
     # RGPD schemas
     "RGPDExportResponseSchema",
     "RGPDDeleteRequestSchema",

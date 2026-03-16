@@ -5,11 +5,22 @@ from django.contrib.auth.models import AbstractUser
 from django.db.models import CharField
 from django.db.models import EmailField
 from django.db.models import ImageField
+from django.db.models import TextField
+from django.db.models import TextChoices
 from django.db.models import UUIDField
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from .managers import UserManager
+
+
+class ExternalValidationStatus(TextChoices):
+    """Validation status for external (Externe) accounts."""
+
+    NONE = "none", _("Non applicable")
+    PENDING = "pending", _("En attente de validation")
+    APPROVED = "approved", _("Approuvé")
+    REJECTED = "rejected", _("Rejeté")
 
 
 def user_avatar_path(instance: "User", filename: str) -> str:
@@ -45,6 +56,16 @@ class User(AbstractUser):
     company_name = CharField(
         _("company name"),
         max_length=255,
+        blank=True,
+    )
+    external_validation_status = CharField(
+        _("external validation status"),
+        max_length=10,
+        choices=ExternalValidationStatus.choices,
+        default=ExternalValidationStatus.NONE,
+    )
+    external_rejection_reason = TextField(
+        _("external rejection reason"),
         blank=True,
     )
 

@@ -32,7 +32,7 @@ from backend_django.core.schemas import PaginatedResponseSchema, paginate_querys
 from backend_django.core.roles import Role
 from backend_django.core.roles import ROLE_DESCRIPTIONS
 from backend_django.ter.models import TERPeriod
-from backend_django.users.models import User
+from backend_django.users.models import ExternalValidationStatus, User
 from backend_django.users.schemas import CSVImportErrorSchema
 from backend_django.users.schemas import CSVImportResultSchema
 from backend_django.users.schemas import MessageSchema
@@ -42,6 +42,8 @@ from backend_django.users.schemas import SetUserRoleSchema
 from backend_django.users.schemas import UserCreateSchema
 from backend_django.users.schemas import UserDetailSchema
 from backend_django.users.schemas import UserListSchema
+from backend_django.users.schemas import ExternalRejectSchema
+from backend_django.users.schemas import ExternalUserSchema
 from backend_django.users.schemas import UserUpdateSchema
 
 logger = logging.getLogger(__name__)
@@ -382,6 +384,38 @@ class UserAdminController(BaseAPI):
             enrolled_in_ter_period=ter_period.name if ter_period else None,
         )
 
+    # ==================== 1-6: External Account Validation ====================
+
+    @http_get(
+        "/external-pending",
+        response={200: list[ExternalUserSchema], 401: ErrorSchema, 403: ErrorSchema},
+        url_name="users_external_pending",
+    )
+    def list_pending_externals(self, request: HttpRequest):
+        """List external accounts pending admin validation."""
+        if not request.user.is_authenticated:
+            return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
+
+        if not is_admin_or_respo(request.user):
+            return PermissionDeniedError("Permission administrateur ou responsable requise.").to_response()
+
+        users = User.objects.filter(
+            external_validation_status=ExternalValidationStatus.PENDING,
+        ).prefetch_related("groups").order_by("-date_joined")
+
+        return 200, [
+            ExternalUserSchema(
+                id=u.id,
+                email=u.email,
+                first_name=u.first_name,
+                last_name=u.last_name,
+                company_name=u.company_name,
+                date_joined=u.date_joined,
+                external_validation_status=u.external_validation_status,
+            )
+            for u in users
+        ]
+
     @http_get(
         "/{user_id}",
         response={200: UserDetailSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
@@ -646,3 +680,105 @@ class UserAdminController(BaseAPI):
                 pass
 
         return 200, UserListSchema.from_user(user)
+
+    @http_post(
+        "/{user_id}/validate-external",
+        response={200: MessageSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="users_validate_external",
+    )
+    def validate_external(self, request: HttpRequest, user_id: UUID):
+        """Approve an external account. Activates the account."""
+        if not request.user.is_authenticated:
+            return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
+
+        if not is_admin_or_respo(request.user):
+            return PermissionDeniedError("Permission administrateur ou responsable requise.").to_response()
+
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return NotFoundError("Utilisateur introuvable.").to_response()
+
+        if user.external_validation_status != ExternalValidationStatus.PENDING:
+            return 400, ErrorSchema(
+                code="NOT_PENDING",
+                message="Ce compte n'est pas en attente de validation.",
+            )
+
+        user.external_validation_status = ExternalValidationStatus.APPROVED
+        user.is_active = True
+        user.save(update_fields=["external_validation_status", "is_active"])
+
+        # Send approval email
+        try:
+            from django.conf import settings
+            from django.core.mail import send_mail
+
+            frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:5173")
+            send_mail(
+                subject="Votre compte Stud'Insight a été approuvé",
+                message=(
+                    f"Bonjour {user.first_name},\n\n"
+                    f"Votre compte externe a été approuvé par un administrateur.\n"
+                    f"Vous pouvez maintenant vous connecter : {frontend_url}/auth/login\n\n"
+                    f"L'équipe Stud'Insight"
+                ),
+                from_email=None,
+                recipient_list=[user.email],
+                fail_silently=True,
+            )
+        except Exception:
+            logger.exception("Failed to send approval email")
+
+        return 200, MessageSchema(success=True, message="Compte externe approuvé et activé.")
+
+    @http_post(
+        "/{user_id}/reject-external",
+        response={200: MessageSchema, 400: ErrorSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="users_reject_external",
+    )
+    def reject_external(self, request: HttpRequest, user_id: UUID, data: ExternalRejectSchema):
+        """Reject an external account with a reason."""
+        if not request.user.is_authenticated:
+            return 401, ErrorSchema(code="NOT_AUTHENTICATED", message="Non authentifié.")
+
+        if not is_admin_or_respo(request.user):
+            return PermissionDeniedError("Permission administrateur ou responsable requise.").to_response()
+
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return NotFoundError("Utilisateur introuvable.").to_response()
+
+        if user.external_validation_status != ExternalValidationStatus.PENDING:
+            return 400, ErrorSchema(
+                code="NOT_PENDING",
+                message="Ce compte n'est pas en attente de validation.",
+            )
+
+        user.external_validation_status = ExternalValidationStatus.REJECTED
+        user.external_rejection_reason = data.reason
+        user.is_active = False
+        user.save(update_fields=["external_validation_status", "external_rejection_reason", "is_active"])
+
+        # Send rejection email
+        try:
+            from django.core.mail import send_mail
+
+            send_mail(
+                subject="Votre demande de compte Stud'Insight a été refusée",
+                message=(
+                    f"Bonjour {user.first_name},\n\n"
+                    f"Votre demande de compte externe a été refusée.\n"
+                    f"Raison : {data.reason}\n\n"
+                    f"Si vous pensez qu'il s'agit d'une erreur, contactez l'administration.\n\n"
+                    f"L'équipe Stud'Insight"
+                ),
+                from_email=None,
+                recipient_list=[user.email],
+                fail_silently=True,
+            )
+        except Exception:
+            logger.exception("Failed to send rejection email")
+
+        return 200, MessageSchema(success=True, message="Compte externe rejeté.")
