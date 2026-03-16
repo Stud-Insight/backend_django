@@ -13,6 +13,7 @@ import io
 from datetime import date
 from uuid import UUID
 
+from django.core.cache import cache
 from django.db.models import Q
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
@@ -25,14 +26,16 @@ from backend_django.core.exceptions import (
     PermissionDeniedError,
 )
 from backend_django.core.roles import is_admin, is_ter_admin, user_has_role, Role
-from backend_django.groups.models import Group
+from backend_django.groups.models import Group, GroupStatus
 from backend_django.ter.models import (
     GradeStatus,
     PeriodStatus,
+    SubjectStatus,
     TERDeliverable,
     TERGrade,
     TERIndividualGrade,
     TERPeriod,
+    TERRanking,
     TERSubject,
 )
 from backend_django.ter.schemas.dashboard import (
@@ -42,9 +45,13 @@ from backend_django.ter.schemas.dashboard import (
     EncadrantGroupSchema,
     StudentDashboardSchema,
     StudentPhaseSchema,
+    WorkflowWarningSchema,
+    WorkflowWarningsResponseSchema,
 )
 from backend_django.users.models import User
 from backend_django.users.schemas import UserMinimalSchema
+
+DASHBOARD_CACHE_TTL = 60  # seconds
 
 
 # ==================== Helper Functions ====================
@@ -198,6 +205,11 @@ class TERDashboardController(BaseAPI):
         period = get_object_or_404(TERPeriod, id=period_id)
         user = request.user
 
+        cache_key = f"ter_encadrant_dashboard_{period_id}_{user.id}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return 200, cached
+
         # Find groups assigned to subjects where user is professor or supervisor
         groups = Group.objects.filter(
             ter_period=period,
@@ -247,7 +259,7 @@ class TERDashboardController(BaseAPI):
                 group_grade=group_grade,
             ))
 
-        return 200, EncadrantDashboardSchema(
+        result = EncadrantDashboardSchema(
             ter_period_id=period.id,
             ter_period_name=period.name,
             groups=group_schemas,
@@ -255,6 +267,8 @@ class TERDashboardController(BaseAPI):
             graded_groups=graded_count,
             finalized_groups=finalized_count,
         )
+        cache.set(cache_key, result, DASHBOARD_CACHE_TTL)
+        return 200, result
 
     # ==================== 12-4: Student Dashboard ====================
 
@@ -350,6 +364,11 @@ class TERDashboardController(BaseAPI):
                 "Seuls les administrateurs peuvent consulter les statistiques systeme."
             ).to_response()
 
+        cache_key = "ter_admin_stats"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return 200, cached
+
         total_users = User.objects.count()
         active_users = User.objects.filter(is_active=True).count()
         total_students = User.objects.filter(groups__name=Role.ETUDIANT.value).distinct().count()
@@ -367,7 +386,7 @@ class TERDashboardController(BaseAPI):
         except (ImportError, Exception):
             active_stage = 0
 
-        return 200, AdminSystemStatsSchema(
+        result = AdminSystemStatsSchema(
             total_users=total_users,
             active_users=active_users,
             total_students=total_students,
@@ -378,6 +397,164 @@ class TERDashboardController(BaseAPI):
             archived_ter_periods=archived_ter,
             active_stage_periods=active_stage,
         )
+        cache.set(cache_key, result, DASHBOARD_CACHE_TTL)
+        return 200, result
+
+    # ==================== 12-8: Workflow Gating Warnings ====================
+
+    @http_get(
+        "/warnings/{period_id}",
+        response={200: WorkflowWarningsResponseSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
+        url_name="ter_dashboard_warnings",
+    )
+    def workflow_warnings(self, request: HttpRequest, period_id: UUID):
+        """
+        Get workflow gating warnings for a TER period.
+
+        Returns pre-condition checks and warnings that help Respo TER
+        understand what needs to happen before phase transitions.
+        """
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        if not is_ter_admin(request.user):
+            return PermissionDeniedError(
+                "Seuls les responsables TER peuvent consulter les alertes."
+            ).to_response()
+
+        period = get_object_or_404(TERPeriod, id=period_id)
+
+        cache_key = f"ter_warnings_{period_id}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return 200, cached
+
+        phase = compute_phase(period)
+        warnings = []
+
+        # Counts
+        total_subjects = TERSubject.objects.filter(ter_period=period).count()
+        validated_subjects = TERSubject.objects.filter(
+            ter_period=period, status=SubjectStatus.VALIDATED
+        ).count()
+        pending_subjects = TERSubject.objects.filter(
+            ter_period=period, status=SubjectStatus.SUBMITTED
+        ).count()
+        draft_subjects = TERSubject.objects.filter(
+            ter_period=period, status=SubjectStatus.DRAFT
+        ).count()
+
+        enrolled_count = period.enrolled_students.count()
+        groups = Group.objects.filter(ter_period=period)
+        total_groups = groups.count()
+        formed_groups = groups.filter(
+            status__in=[GroupStatus.FORME, GroupStatus.CLOTURE]
+        ).count()
+        students_in_groups = User.objects.filter(
+            student_groups__ter_period=period
+        ).distinct().count()
+        solitaires = enrolled_count - students_in_groups
+
+        groups_with_ranking = TERRanking.objects.filter(
+            group__ter_period=period
+        ).values("group").distinct().count()
+
+        assigned_groups = groups.filter(assigned_subject__isnull=False).count()
+
+        grades = TERGrade.objects.filter(ter_period=period)
+        total_grades = grades.count()
+        finalized_grades = grades.filter(status=GradeStatus.FINALIZED).count()
+
+        # --- Subject validation warnings ---
+        if total_subjects == 0:
+            warnings.append(WorkflowWarningSchema(
+                level="error", phase="formation",
+                message="Aucun sujet cree pour cette periode.",
+            ))
+        if pending_subjects > 0:
+            warnings.append(WorkflowWarningSchema(
+                level="warning", phase="formation",
+                message=f"{pending_subjects} sujet(s) en attente de validation.",
+                count=pending_subjects, total=total_subjects,
+            ))
+        if draft_subjects > 0:
+            warnings.append(WorkflowWarningSchema(
+                level="warning", phase="formation",
+                message=f"{draft_subjects} sujet(s) encore en brouillon.",
+                count=draft_subjects, total=total_subjects,
+            ))
+
+        # --- Enrollment warnings ---
+        if enrolled_count == 0:
+            warnings.append(WorkflowWarningSchema(
+                level="error", phase="formation",
+                message="Aucun etudiant inscrit a cette periode.",
+            ))
+
+        # --- Group formation warnings ---
+        if solitaires > 0:
+            warnings.append(WorkflowWarningSchema(
+                level="warning", phase="formation",
+                message=f"{solitaires} etudiant(s) sans groupe.",
+                count=solitaires, total=enrolled_count,
+            ))
+        if total_groups > 0 and formed_groups < total_groups:
+            incomplete = total_groups - formed_groups
+            warnings.append(WorkflowWarningSchema(
+                level="warning", phase="formation",
+                message=f"{incomplete} groupe(s) non forme(s) (statut ouvert).",
+                count=incomplete, total=total_groups,
+            ))
+
+        # --- Ranking warnings ---
+        if validated_subjects == 0 and total_subjects > 0:
+            warnings.append(WorkflowWarningSchema(
+                level="error", phase="selection",
+                message="Aucun sujet valide. Le classement est impossible.",
+                count=0, total=total_subjects,
+            ))
+        if formed_groups > 0 and groups_with_ranking < formed_groups:
+            missing = formed_groups - groups_with_ranking
+            warnings.append(WorkflowWarningSchema(
+                level="warning", phase="selection",
+                message=f"{missing} groupe(s) n'ont pas soumis de classement.",
+                count=missing, total=formed_groups,
+            ))
+
+        # --- Assignment warnings ---
+        if formed_groups > 0 and assigned_groups < formed_groups:
+            unassigned = formed_groups - assigned_groups
+            warnings.append(WorkflowWarningSchema(
+                level="warning", phase="assignment",
+                message=f"{unassigned} groupe(s) non affecte(s) a un sujet.",
+                count=unassigned, total=formed_groups,
+            ))
+
+        # --- Grading warnings ---
+        if assigned_groups > 0 and total_grades < assigned_groups:
+            missing = assigned_groups - total_grades
+            warnings.append(WorkflowWarningSchema(
+                level="warning", phase="execution",
+                message=f"{missing} groupe(s) sans note saisie.",
+                count=missing, total=assigned_groups,
+            ))
+        if total_grades > 0 and finalized_grades < total_grades:
+            pending = total_grades - finalized_grades
+            warnings.append(WorkflowWarningSchema(
+                level="warning", phase="execution",
+                message=f"{pending} note(s) non finalisee(s).",
+                count=pending, total=total_grades,
+            ))
+
+        result = WorkflowWarningsResponseSchema(
+            period_id=period.id,
+            period_name=period.name,
+            current_phase=phase.current_phase,
+            warnings=warnings,
+        )
+
+        cache.set(cache_key, result, DASHBOARD_CACHE_TTL)
+        return 200, result
 
     # ==================== 12-6: TER CSV Export ====================
 

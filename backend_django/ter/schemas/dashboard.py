@@ -91,3 +91,25 @@ class AdminSystemStatsSchema(Schema):
     draft_ter_periods: int
     archived_ter_periods: int
     active_stage_periods: int
+
+
+# ==================== 12-8: Workflow Gating Warnings ====================
+
+
+class WorkflowWarningSchema(Schema):
+    """A single workflow warning/pre-condition check."""
+
+    level: str  # "error" (blocks action) or "warning" (informational)
+    phase: str  # Which phase this warning relates to
+    message: str
+    count: int | None = None  # Optional count (e.g. "5 subjects not validated")
+    total: int | None = None  # Optional total for context
+
+
+class WorkflowWarningsResponseSchema(Schema):
+    """Response for workflow warnings endpoint."""
+
+    period_id: UUID
+    period_name: str
+    current_phase: str
+    warnings: list[WorkflowWarningSchema]
