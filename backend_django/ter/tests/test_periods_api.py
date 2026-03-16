@@ -348,11 +348,42 @@ class TestStudentsEndpoints:
         assert data["count"] == 0
         assert data["results"] == []
 
-    def test_list_students_forbidden_for_student(self, authenticated_client, ter_period_open):
-        """Non-staff users cannot list enrolled students."""
+    def test_list_students_forbidden_for_non_enrolled_student(self, authenticated_client, ter_period_open):
+        """Students not enrolled in the period cannot list enrolled students."""
         response = authenticated_client.get(f"/api/ter/periods/{ter_period_open.id}/students")
 
         assert response.status_code == 403
+
+    def test_list_students_as_enrolled_student(self, authenticated_client, student_user, ter_period_open):
+        """Enrolled students can list other enrolled students."""
+        ter_period_open.enrolled_students.add(student_user)
+
+        response = authenticated_client.get(f"/api/ter/periods/{ter_period_open.id}/students")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["count"] == 1
+        assert data["results"][0]["email"] == student_user.email
+
+    def test_list_students_search_filter(self, staff_client, student_user, ter_period_open):
+        """Search parameter filters students by name or email."""
+        ter_period_open.enrolled_students.add(student_user)
+
+        response = staff_client.get(
+            f"/api/ter/periods/{ter_period_open.id}/students?search={student_user.first_name}"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["count"] == 1
+
+        # Non-matching search returns empty
+        response = staff_client.get(
+            f"/api/ter/periods/{ter_period_open.id}/students?search=zzzznonexistent"
+        )
+
+        assert response.status_code == 200
+        assert response.json()["count"] == 0
 
     def test_add_student(self, staff_client, staff_user, student_user, ter_period_open):
         """Staff can add a student to a period."""

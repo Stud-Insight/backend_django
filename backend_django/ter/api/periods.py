@@ -633,22 +633,32 @@ class TERPeriodController(BaseAPI):
         response={200: PaginatedResponseSchema, 401: ErrorSchema, 403: ErrorSchema, 404: ErrorSchema},
         url_name="ter_periods_students_list",
     )
-    def list_students(self, request: HttpRequest, period_id: UUID, page: int = 1, page_size: int = 20):
+    def list_students(self, request: HttpRequest, period_id: UUID, search: str = "", page: int = 1, page_size: int = 20):
         """
         List students enrolled in a TER period (paginated).
 
-        Only Respo TER / Admin can view enrolled students.
+        Accessible to Respo TER / Admin, or any student enrolled in the period.
+        Supports optional `search` query param to filter by name or email.
         """
         if not request.user.is_authenticated:
             return NotAuthenticatedError().to_response()
 
-        if not is_ter_admin(request.user):
+        period = get_object_or_404(TERPeriod, id=period_id)
+
+        is_enrolled = period.enrolled_students.filter(id=request.user.id).exists()
+        if not is_ter_admin(request.user) and not is_enrolled:
             return PermissionDeniedError(
-                "Seuls les responsables TER peuvent consulter les étudiants inscrits."
+                "Vous devez être inscrit à cette période ou être responsable TER."
             ).to_response()
 
-        period = get_object_or_404(TERPeriod, id=period_id)
         students = period.enrolled_students.order_by("last_name", "first_name")
+
+        if search:
+            students = students.filter(
+                Q(first_name__icontains=search)
+                | Q(last_name__icontains=search)
+                | Q(email__icontains=search)
+            )
 
         items, count, pg, ps = paginate_queryset(students, page, page_size)
 
