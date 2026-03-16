@@ -5,7 +5,7 @@ TER Ranking schemas for API requests and responses.
 from uuid import UUID
 
 from ninja import Schema
-from pydantic import field_validator, model_validator
+from pydantic import field_validator
 
 
 class TERRankingItemSchema(Schema):
@@ -64,3 +64,74 @@ class TERRankingCreateSchema(Schema):
             raise ValueError("Les rangs doivent etre consecutifs (1, 2, 3, ...).")
 
         return v
+
+
+# ==================== Individual Rankings Schemas ====================
+
+
+def _validate_individual_rankings(v: list) -> list:
+    """Shared validation for individual rankings (partial allowed)."""
+    if not v:
+        raise ValueError("Le classement ne peut pas etre vide.")
+
+    ranks = []
+    subject_ids = []
+    for item in v:
+        if "subject_id" not in item or "rank" not in item:
+            raise ValueError("Chaque element doit avoir 'subject_id' et 'rank'.")
+        rank = item["rank"]
+        if rank < 1:
+            raise ValueError("Les rangs doivent commencer a 1.")
+        ranks.append(rank)
+        subject_ids.append(str(item["subject_id"]))
+
+    if len(ranks) != len(set(ranks)):
+        raise ValueError("Les rangs doivent etre uniques.")
+
+    if len(subject_ids) != len(set(subject_ids)):
+        raise ValueError("Un sujet ne peut apparaitre qu'une seule fois.")
+
+    expected_ranks = list(range(1, len(ranks) + 1))
+    if sorted(ranks) != expected_ranks:
+        raise ValueError("Les rangs doivent etre consecutifs (1, 2, 3, ...).")
+
+    return v
+
+
+class TERIndividualRankingCreateSchema(Schema):
+    """Schema for submitting an individual ranking (partial allowed)."""
+
+    rankings: list[dict]  # List of {subject_id: UUID, rank: int}
+
+    @field_validator("rankings")
+    @classmethod
+    def validate_rankings(cls, v: list) -> list:
+        return _validate_individual_rankings(v)
+
+
+class TERIndividualRankingUserSchema(Schema):
+    """One user's complete individual ranking."""
+
+    user_id: UUID
+    user_email: str
+    user_first_name: str
+    user_last_name: str
+    rankings: list[TERRankingItemSchema]
+
+
+class TERIndividualRankingListSchema(Schema):
+    """All individual rankings for a group."""
+
+    group_id: UUID
+    group_name: str
+    members_rankings: list[TERIndividualRankingUserSchema]
+
+
+class TERSuggestedRankingSchema(Schema):
+    """Suggested group ranking based on aggregated individual ranks."""
+
+    group_id: UUID
+    group_name: str
+    rankings: list[TERRankingItemSchema]
+    member_count: int
+    members_who_ranked: int

@@ -51,7 +51,6 @@ class TERSubjectDetailSchema(Schema):
     ter_period_id: UUID | None  # Nullable: can be draft without period
     created: str
     modified: str
-    is_favorite: bool = False
 
 
 class TERSubjectCreateSchema(Schema):
@@ -140,15 +139,6 @@ class TERSubjectUpdateSchema(Schema):
                 raise ValueError("La description doit faire au moins 50 caracteres.")
             return v.strip()
         return v
-
-
-class TERFavoriteSchema(Schema):
-    """Schema for favorite responses."""
-
-    id: UUID
-    student_id: UUID
-    subject_id: UUID
-    created: str
 
 
 class TERSubjectRejectSchema(Schema):

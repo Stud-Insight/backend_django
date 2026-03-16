@@ -32,12 +32,15 @@ from .periods import (
     TERPeriodUpdateSchema,
 )
 from .rankings import (
+    TERIndividualRankingCreateSchema,
+    TERIndividualRankingListSchema,
+    TERIndividualRankingUserSchema,
     TERRankingCreateSchema,
     TERRankingItemSchema,
     TERRankingListSchema,
+    TERSuggestedRankingSchema,
 )
 from .subjects import (
-    TERFavoriteSchema,
     TERSubjectCreateSchema,
     TERSubjectDetailSchema,
     TERSubjectListSchema,
@@ -58,11 +61,14 @@ __all__ = [
     "TERSubjectDetailSchema",
     "TERSubjectCreateSchema",
     "TERSubjectUpdateSchema",
-    "TERFavoriteSchema",
     # Rankings
     "TERRankingItemSchema",
     "TERRankingListSchema",
     "TERRankingCreateSchema",
+    "TERIndividualRankingCreateSchema",
+    "TERIndividualRankingListSchema",
+    "TERIndividualRankingUserSchema",
+    "TERSuggestedRankingSchema",
     # Balancing
     "MergeOperationSchema",
     "BalancingPreviewSchema",

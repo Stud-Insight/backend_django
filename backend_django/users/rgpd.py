@@ -143,18 +143,20 @@ def collect_user_data(user: User) -> dict[str, Any]:
     except Exception as e:
         logger.warning(f"Could not export TER rankings: {e}")
 
-    # TER Favorites
-    data["ter_favorites"] = []
+    # TER Individual Rankings
+    data["ter_individual_rankings"] = []
     try:
-        from backend_django.ter.models import TERFavorite
-        for favorite in TERFavorite.objects.filter(student=user).select_related("subject"):
-            data["ter_favorites"].append({
-                "id": str(favorite.id),
-                "subject_title": favorite.subject.title,
-                "created": favorite.created.isoformat(),
+        from backend_django.ter.models import TERIndividualRanking
+        for ranking in TERIndividualRanking.objects.filter(user=user).select_related("subject", "group"):
+            data["ter_individual_rankings"].append({
+                "id": str(ranking.id),
+                "group_name": ranking.group.name,
+                "subject_title": ranking.subject.title,
+                "rank": ranking.rank,
+                "created": ranking.created.isoformat(),
             })
     except Exception as e:
-        logger.warning(f"Could not export TER favorites: {e}")
+        logger.warning(f"Could not export TER individual rankings: {e}")
 
     # Stage Rankings
     data["stage_rankings"] = []
@@ -345,14 +347,14 @@ def anonymize_user(user: User, deleted_by: User | None = None) -> dict[str, Any]
     except Exception as e:
         logger.warning(f"Could not delete TER rankings: {e}")
 
-    # Delete TER favorites
+    # Delete TER individual rankings
     try:
-        from backend_django.ter.models import TERFavorite
-        ter_fav_count = TERFavorite.objects.filter(student=user).count()
-        TERFavorite.objects.filter(student=user).delete()
-        summary["actions"].append(f"deleted_{ter_fav_count}_ter_favorites")
+        from backend_django.ter.models import TERIndividualRanking
+        ter_ir_count = TERIndividualRanking.objects.filter(user=user).count()
+        TERIndividualRanking.objects.filter(user=user).delete()
+        summary["actions"].append(f"deleted_{ter_ir_count}_ter_individual_rankings")
     except Exception as e:
-        logger.warning(f"Could not delete TER favorites: {e}")
+        logger.warning(f"Could not delete TER individual rankings: {e}")
 
     # Delete Stage rankings
     try:

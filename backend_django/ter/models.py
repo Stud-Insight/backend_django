@@ -5,7 +5,7 @@ Contains:
 - TERPeriod: Academic period for TER projects
 - TERSubject: Subject proposals for TER (replaces Proposal for TER)
 - TERRanking: Group rankings of subjects
-- TERFavorite: Individual student favorites
+- TERIndividualRanking: Personal rankings per group member
 - BalancingOperation: Audit log for group balancing operations
 - TERDeliverable: File deliverables uploaded by groups
 - DeliverableUpload: Async upload tracking for large files
@@ -359,38 +359,55 @@ class TERRanking(BaseModel):
         return f"{self.group.name} - #{self.rank}: {self.subject.title}"
 
 
-class TERFavorite(BaseModel):
+class TERIndividualRanking(BaseModel):
     """
-    Individual student favorite for TER subjects.
+    Personal ranking of TER subjects by individual group members.
 
-    Allows students to mark subjects as favorites before group discussion.
+    Each group member can submit their own ranking of subjects
+    to facilitate group discussion before the leader submits
+    the official group ranking.
     """
 
-    student = models.ForeignKey(
+    group = models.ForeignKey(
+        "groups.Group",
+        on_delete=models.CASCADE,
+        related_name="individual_rankings",
+        verbose_name=_("group"),
+    )
+    user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="ter_favorites",
-        verbose_name=_("student"),
+        related_name="ter_individual_rankings",
+        verbose_name=_("user"),
     )
     subject = models.ForeignKey(
         TERSubject,
         on_delete=models.CASCADE,
-        related_name="favorites",
+        related_name="individual_rankings",
         verbose_name=_("subject"),
+    )
+    rank = models.PositiveSmallIntegerField(
+        _("rank"),
+        help_text=_("1 = most preferred"),
     )
 
     class Meta:
-        verbose_name = _("TER favorite")
-        verbose_name_plural = _("TER favorites")
+        verbose_name = _("TER individual ranking")
+        verbose_name_plural = _("TER individual rankings")
+        ordering = ["group", "user", "rank"]
         constraints = [
             models.UniqueConstraint(
-                fields=["student", "subject"],
-                name="unique_ter_student_favorite",
+                fields=["group", "user", "subject"],
+                name="unique_ter_individual_group_user_subject",
+            ),
+            models.UniqueConstraint(
+                fields=["group", "user", "rank"],
+                name="unique_ter_individual_group_user_rank",
             ),
         ]
 
     def __str__(self) -> str:
-        return f"{self.student.email} - {self.subject.title}"
+        return f"{self.user.email} - {self.group.name} - #{self.rank}: {self.subject.title}"
 
 
 class BalancingOperationType(models.TextChoices):

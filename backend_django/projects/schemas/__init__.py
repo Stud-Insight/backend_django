@@ -24,7 +24,6 @@ from backend_django.projects.schemas.groups import TransferLeadershipSchema
 
 # Re-export TER schemas for convenience
 from backend_django.ter.schemas import (
-    TERFavoriteSchema,
     TERPeriodCopySchema,
     TERPeriodCreateSchema,
     TERPeriodDetailSchema,
@@ -79,7 +78,6 @@ __all__ = [
     "TERSubjectDetailSchema",
     "TERSubjectCreateSchema",
     "TERSubjectUpdateSchema",
-    "TERFavoriteSchema",
     "TERRankingItemSchema",
     "TERRankingListSchema",
     "TERRankingCreateSchema",

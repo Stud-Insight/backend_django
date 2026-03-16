@@ -28,7 +28,7 @@ from backend_django.ter.models import (
     BalancingOperationType,
     PeriodStatus,
     SubjectStatus,
-    TERFavorite,
+    TERIndividualRanking,
     TERPeriod,
     TERRanking,
     TERSubject,
@@ -957,17 +957,7 @@ class TestEdgeCases:
         """Students with similar preferences should be matched together."""
         ter_period_open.enrolled_students.add(student_user, another_student)
 
-        # Both students favorite the same subject
-        TERFavorite.objects.create(
-            student=student_user,
-            subject=subject_ia,
-        )
-        TERFavorite.objects.create(
-            student=another_student,
-            subject=subject_ia,
-        )
-
-        # Create two solo groups
+        # Create two solo groups first (needed for individual rankings)
         group_a = Group.objects.create(
             name="Group A",
             leader=student_user,
@@ -983,6 +973,14 @@ class TestEdgeCases:
             ter_period=ter_period_open,
         )
         group_b.members.add(another_student)
+
+        # Both students rank the same subject as #1
+        TERIndividualRanking.objects.create(
+            group=group_a, user=student_user, subject=subject_ia, rank=1,
+        )
+        TERIndividualRanking.objects.create(
+            group=group_b, user=another_student, subject=subject_ia, rank=1,
+        )
 
         result = run_balancing(
             ter_period_open,

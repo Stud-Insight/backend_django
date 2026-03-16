@@ -20,9 +20,8 @@ from backend_django.core.exceptions import (
 )
 from backend_django.core.schemas import PaginatedResponseSchema, paginate_queryset
 from backend_django.core.roles import is_ter_admin, Role, user_has_role
-from backend_django.ter.models import PeriodStatus, SubjectStatus, TERFavorite, TERPeriod, TERSubject
+from backend_django.ter.models import PeriodStatus, SubjectStatus, TERPeriod, TERSubject
 from backend_django.ter.schemas.subjects import (
-    TERFavoriteSchema,
     TERSubjectCreateSchema,
     TERSubjectDetailSchema,
     TERSubjectListSchema,
@@ -67,7 +66,7 @@ def subject_to_list_schema(subject: TERSubject) -> TERSubjectListSchema:
     )
 
 
-def subject_to_detail_schema(subject: TERSubject, is_favorite: bool = False) -> TERSubjectDetailSchema:
+def subject_to_detail_schema(subject: TERSubject) -> TERSubjectDetailSchema:
     """Convert TERSubject to detailed schema."""
     return TERSubjectDetailSchema(
         id=subject.id,
@@ -87,7 +86,6 @@ def subject_to_detail_schema(subject: TERSubject, is_favorite: bool = False) -> 
         ter_period_id=subject.ter_period_id,
         created=str(subject.created),
         modified=str(subject.modified),
-        is_favorite=is_favorite,
     )
 
 
@@ -205,13 +203,7 @@ class TERSubjectController(BaseAPI):
             if subject.status != SubjectStatus.VALIDATED:
                 return NotFoundError("Sujet TER non trouve.").to_response()
 
-        # Check if user has favorited this subject
-        is_favorite = TERFavorite.objects.filter(
-            student=request.user,
-            subject=subject,
-        ).exists()
-
-        return 200, subject_to_detail_schema(subject, is_favorite=is_favorite)
+        return 200, subject_to_detail_schema(subject)
 
     @http_post(
         "/",
@@ -531,63 +523,3 @@ class TERSubjectController(BaseAPI):
             )
 
         return 200, subject_to_detail_schema(subject)
-
-    @http_post(
-        "/{subject_id}/favorite",
-        response={201: TERFavoriteSchema, 400: ErrorSchema, 401: ErrorSchema, 404: ErrorSchema, 409: ErrorSchema},
-        url_name="ter_subjects_add_favorite",
-    )
-    def add_favorite(self, request: HttpRequest, subject_id: UUID):
-        """
-        Add a TER subject to favorites.
-
-        Students can mark validated subjects as favorites.
-        """
-        if not request.user.is_authenticated:
-            return NotAuthenticatedError().to_response()
-
-        subject = get_object_or_404(TERSubject, id=subject_id)
-
-        # Only validated subjects can be favorited
-        if subject.status != SubjectStatus.VALIDATED:
-            return BadRequestError(
-                "Seuls les sujets valides peuvent etre mis en favoris."
-            ).to_response()
-
-        # Check if already favorited
-        if TERFavorite.objects.filter(student=request.user, subject=subject).exists():
-            return 409, {"message": "Ce sujet est deja dans vos favoris."}
-
-        favorite = TERFavorite.objects.create(
-            student=request.user,
-            subject=subject,
-        )
-
-        return 201, TERFavoriteSchema(
-            id=favorite.id,
-            student_id=favorite.student_id,
-            subject_id=favorite.subject_id,
-            created=str(favorite.created),
-        )
-
-    @http_delete(
-        "/{subject_id}/favorite",
-        response={204: None, 401: ErrorSchema, 404: ErrorSchema},
-        url_name="ter_subjects_remove_favorite",
-    )
-    def remove_favorite(self, request: HttpRequest, subject_id: UUID):
-        """
-        Remove a TER subject from favorites.
-        """
-        if not request.user.is_authenticated:
-            return NotAuthenticatedError().to_response()
-
-        favorite = get_object_or_404(
-            TERFavorite,
-            student=request.user,
-            subject_id=subject_id,
-        )
-
-        favorite.delete()
-
-        return 204, None

@@ -103,7 +103,7 @@ from backend_django.ter.models import PeriodStatus  # noqa: F401, E402
 # Re-export TERPeriod and related models
 from backend_django.ter.models import (  # noqa: F401, E402
     SubjectStatus as TERSubjectStatus,
-    TERFavorite,
+    TERIndividualRanking,
     TERPeriod,
     TERRanking,
     TERSubject,

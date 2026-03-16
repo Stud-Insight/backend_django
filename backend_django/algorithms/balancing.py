@@ -127,7 +127,7 @@ def identify_problematic_entities(period: "TERPeriod") -> ProblematicEntities:
 
 def get_student_preferences(student_id: UUID, period: "TERPeriod") -> dict[UUID, int]:
     """
-    Get a student's subject preferences from TERFavorite.
+    Get a student's subject preferences from TERIndividualRanking.
 
     Args:
         student_id: The student's UUID
@@ -136,14 +136,21 @@ def get_student_preferences(student_id: UUID, period: "TERPeriod") -> dict[UUID,
     Returns:
         Dict mapping subject_id to preference rank (1 = most preferred)
     """
-    from backend_django.ter.models import TERFavorite
+    from backend_django.groups.models import Group
+    from backend_django.ter.models import TERIndividualRanking
 
-    favorites = TERFavorite.objects.filter(
-        student_id=student_id, subject__ter_period=period
-    ).order_by("created")
+    group = Group.objects.filter(
+        ter_period=period, members__id=student_id
+    ).first()
 
-    # Convert to rank (favorites have no explicit order, use creation time)
-    return {fav.subject_id: idx + 1 for idx, fav in enumerate(favorites)}
+    if not group:
+        return {}
+
+    rankings = TERIndividualRanking.objects.filter(
+        user_id=student_id, group=group
+    ).values_list("subject_id", "rank")
+
+    return dict(rankings)
 
 
 def get_group_preferences(group_id: UUID, period: "TERPeriod") -> dict[UUID, int]:

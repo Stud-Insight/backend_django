@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import TERFavorite, TERPeriod, TERRanking, TERSubject
+from .models import TERIndividualRanking, TERPeriod, TERRanking, TERSubject
 
 
 @admin.register(TERPeriod)
@@ -26,7 +26,8 @@ class TERRankingAdmin(admin.ModelAdmin):
     ordering = ["group", "rank"]
 
 
-@admin.register(TERFavorite)
-class TERFavoriteAdmin(admin.ModelAdmin):
-    list_display = ["student", "subject"]
+@admin.register(TERIndividualRanking)
+class TERIndividualRankingAdmin(admin.ModelAdmin):
+    list_display = ["user", "group", "subject", "rank"]
     list_filter = ["subject__ter_period"]
+    ordering = ["group", "user", "rank"]
