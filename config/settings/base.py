@@ -84,6 +84,7 @@ THIRD_PARTY_APPS = [
     "ninja",
     "ninja_extra",
     "django_celery_beat",
+    "django_cas_ng",
 ]
 
 LOCAL_APPS = [
@@ -111,6 +112,7 @@ MIGRATION_MODULES = {"sites": "backend_django.contrib.sites.migrations"}
 AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
     "allauth.account.auth_backends.AuthenticationBackend",
+    "django_cas_ng.backends.CASBackend",
 ]
 # https://docs.djangoproject.com/en/dev/ref/settings/#auth-user-model
 AUTH_USER_MODEL = "users.User"
@@ -295,6 +297,14 @@ SOCIALACCOUNT_ADAPTER = "backend_django.users.adapters.SocialAccountAdapter"
 # https://docs.allauth.org/en/latest/socialaccount/configuration.html
 SOCIALACCOUNT_FORMS = {"signup": "backend_django.users.forms.UserSocialSignupForm"}
 
+
+# CAS SSO Authentication (Université de Montpellier)
+# ------------------------------------------------------------------------------
+CAS_SERVER_URL = env("CAS_SERVER_URL", default="https://cas.umontpellier.fr/cas/")
+CAS_VERSION = "3"
+CAS_CREATE_USER = True
+CAS_LOGIN_MSG = None
+CAS_LOGGED_MSG = None
 
 # Your stuff...
 # ------------------------------------------------------------------------------

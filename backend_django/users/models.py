@@ -2,6 +2,7 @@ import uuid
 from typing import ClassVar
 
 from django.contrib.auth.models import AbstractUser
+from django.db.models import BooleanField
 from django.db.models import CharField
 from django.db.models import EmailField
 from django.db.models import ImageField
@@ -50,6 +51,21 @@ class User(AbstractUser):
         upload_to=user_avatar_path,
         blank=True,
         null=True,
+    )
+
+    # CAS SSO authentication fields
+    is_cas_user = BooleanField(
+        _("CAS user"),
+        default=False,
+        help_text=_("Whether this user authenticated via CAS SSO."),
+    )
+    cas_username = CharField(
+        _("CAS username"),
+        max_length=255,
+        blank=True,
+        unique=True,
+        null=True,
+        help_text=_("The CAS username (e.g., e12345678)."),
     )
 
     # External supervisor (Externe) specific fields

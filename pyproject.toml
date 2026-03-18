@@ -197,4 +197,6 @@ dependencies = [
     "matching==1.4.3",
     # Audit logging
     "django-auditlog==3.0.0",
+    # CAS SSO authentication
+    "django-cas-ng==5.0.1",
 ]
