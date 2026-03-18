@@ -98,6 +98,7 @@ class UserSchema(Schema):
     groups: list[GroupSchema]
     is_staff: bool
     is_superuser: bool
+    is_cas_user: bool = False
 
     @staticmethod
     def from_user(user: "User") -> "UserSchema":
@@ -118,6 +119,7 @@ class UserSchema(Schema):
             groups=groups_with_perms,
             is_staff=user.is_staff,
             is_superuser=user.is_superuser,
+            is_cas_user=user.is_cas_user,
         )
 
 
