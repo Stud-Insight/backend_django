@@ -1078,3 +1078,119 @@ class PeerReview(BaseModel):
     def average_score(self) -> float:
         """Calculate average of the three scores."""
         return (self.contribution_score + self.collaboration_score + self.technical_skill_score) / 3
+
+
+# ==================== Grading Criteria (Canvas de Notation) ====================
+
+
+class GradingCriterion(BaseModel):
+    """
+    Recursive grading criterion for TER evaluation templates.
+
+    Represents a hierarchical structure of evaluation criteria that TER managers
+    define as a grading canvas. Root criteria (parent=None) are top-level categories
+    like "Présentation finale (40%)", which can contain sub-criteria like
+    "Qualité technique (40%)", "Clarté (30%)", etc.
+    """
+
+    ter_period = models.ForeignKey(
+        TERPeriod,
+        on_delete=models.CASCADE,
+        related_name="grading_criteria",
+        verbose_name=_("TER period"),
+    )
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="children",
+        verbose_name=_("parent criterion"),
+    )
+    name = models.CharField(
+        _("name"),
+        max_length=200,
+        help_text=_("Name of the evaluation criterion"),
+    )
+    coefficient = models.FloatField(
+        _("coefficient"),
+        help_text=_("Weight of this criterion (0.0 to 1.0)"),
+    )
+    order = models.PositiveSmallIntegerField(
+        _("display order"),
+        default=0,
+        help_text=_("Order for display and drag & drop reordering"),
+    )
+    max_score = models.FloatField(
+        _("maximum score"),
+        null=True,
+        blank=True,
+        default=20,
+        help_text=_("Maximum score for leaf criteria (e.g. 20)"),
+    )
+
+    class Meta:
+        verbose_name = _("grading criterion")
+        verbose_name_plural = _("grading criteria")
+        ordering = ["order", "created"]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.coefficient*100:.0f}%)"
+
+    @property
+    def is_leaf(self) -> bool:
+        """A criterion is a leaf if it has no children."""
+        return not self.children.exists()
+
+
+class CriterionScore(BaseModel):
+    """
+    Actual score for a grading criterion on a specific group.
+
+    Only leaf criteria (no children) should have scores.
+    The total grade is computed by walking the tree and applying coefficients.
+    """
+
+    grading_criterion = models.ForeignKey(
+        GradingCriterion,
+        on_delete=models.CASCADE,
+        related_name="scores",
+        verbose_name=_("grading criterion"),
+    )
+    group = models.ForeignKey(
+        "groups.Group",
+        on_delete=models.CASCADE,
+        related_name="criterion_scores",
+        verbose_name=_("group"),
+    )
+    score = models.FloatField(
+        _("score"),
+        help_text=_("Score obtained (0 to max_score of the criterion)"),
+    )
+    comment = models.TextField(
+        _("comment"),
+        blank=True,
+        help_text=_("Optional comment for this criterion"),
+    )
+    graded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="criterion_scores_given",
+        verbose_name=_("graded by"),
+    )
+
+    class Meta:
+        verbose_name = _("criterion score")
+        verbose_name_plural = _("criterion scores")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["grading_criterion", "group"],
+                name="unique_score_per_criterion_per_group",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        max_s = self.grading_criterion.max_score or 20
+        return f"{self.grading_criterion.name}: {self.score}/{max_s}"

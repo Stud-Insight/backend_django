@@ -40,6 +40,13 @@ from .rankings import (
     TERRankingListSchema,
     TERSuggestedRankingSchema,
 )
+from .criteria import (
+    BulkReorderSchema,
+    GradingCriterionAddSubSchema,
+    GradingCriterionCreateSchema,
+    GradingCriterionSchema,
+    GradingCriterionUpdateSchema,
+)
 from .subjects import (
     TERSubjectCreateSchema,
     TERSubjectDetailSchema,
@@ -90,4 +97,10 @@ __all__ = [
     "UploadStatusResponse",
     "FILE_SIZE_LIMIT_MB",
     "FILE_SIZE_LIMIT_BYTES",
+    # Grading Criteria
+    "GradingCriterionSchema",
+    "GradingCriterionCreateSchema",
+    "GradingCriterionAddSubSchema",
+    "GradingCriterionUpdateSchema",
+    "BulkReorderSchema",
 ]
