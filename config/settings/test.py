@@ -46,5 +46,11 @@ STORAGES = {
     },
 }
 
+# CELERY
+# ------------------------------------------------------------------------------
+# Run tasks synchronously in tests (no broker needed)
+CELERY_TASK_ALWAYS_EAGER = True
+CELERY_TASK_EAGER_PROPAGATES = True
+
 # Your stuff...
 # ------------------------------------------------------------------------------

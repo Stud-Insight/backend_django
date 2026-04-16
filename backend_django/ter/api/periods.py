@@ -5,9 +5,12 @@ TER Periods API controller.
 from datetime import timedelta
 from uuid import UUID
 
+from django.core.cache import cache
 from django.db.models import Q
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
+
+TER_STATS_CACHE_TTL = 60  # seconds
 from ninja_extra import api_controller, http_delete, http_get, http_post, http_put
 
 from backend_django.core.api import BaseAPI, IsAuthenticated
@@ -441,6 +444,11 @@ class TERPeriodController(BaseAPI):
                 "Seuls les responsables TER peuvent consulter les statistiques."
             ).to_response()
 
+        cache_key = f"ter_period_stats_{period_id}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return 200, cached
+
         period = get_object_or_404(TERPeriod, id=period_id)
 
         # Enrolled students
@@ -477,7 +485,7 @@ class TERPeriodController(BaseAPI):
         # Total assignments = groups with assigned subjects
         subjects_assigned = groups_assigned
 
-        return 200, TERPeriodStatsSchema(
+        result = TERPeriodStatsSchema(
             students_enrolled=students_enrolled,
             students_in_groups=students_in_groups,
             students_solitaires=students_solitaires,
@@ -488,6 +496,8 @@ class TERPeriodController(BaseAPI):
             subjects_validated=subjects_validated,
             subjects_assigned=subjects_assigned,
         )
+        cache.set(cache_key, result, TER_STATS_CACHE_TTL)
+        return 200, result
 
     @http_get(
         "/{period_id}/assignment-statistics",

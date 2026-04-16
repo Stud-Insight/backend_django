@@ -21,7 +21,10 @@ from django.utils.encoding import force_bytes
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
 from django.utils.http import urlsafe_base64_encode
+from ninja import File
+from ninja.files import UploadedFile
 from ninja_extra import api_controller
+from ninja_extra import http_delete
 from ninja_extra import http_get
 from ninja_extra import http_post
 from ninja_extra import http_put
@@ -140,6 +143,53 @@ class AuthController(BaseAPI):
             user.last_name = data.last_name
 
         user.save(update_fields=["first_name", "last_name"])
+
+        return 200, UserSchema.from_user(user)
+
+    @http_post(
+        "/me/avatar",
+        response={200: UserSchema, 400: ErrorSchema, 401: ErrorSchema},
+        url_name="auth_me_avatar_upload",
+    )
+    def upload_avatar_view(self, request: HttpRequest, file: UploadedFile = File(...)):
+        """Upload or replace the current user's avatar."""
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        max_size = 5 * 1024 * 1024
+        if file.size > max_size:
+            return BadRequestError("L'image ne doit pas dépasser 5 Mo.").to_response()
+
+        allowed = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+        if file.content_type not in allowed:
+            return BadRequestError("Format d'image non supporté (JPEG, PNG, WEBP, GIF uniquement).").to_response()
+
+        user = request.user
+
+        if user.avatar:
+            user.avatar.delete(save=False)
+
+        user.avatar = file
+        user.save(update_fields=["avatar"])
+
+        return 200, UserSchema.from_user(user)
+
+    @http_delete(
+        "/me/avatar",
+        response={200: UserSchema, 401: ErrorSchema},
+        url_name="auth_me_avatar_delete",
+    )
+    def delete_avatar_view(self, request: HttpRequest):
+        """Remove the current user's avatar."""
+        if not request.user.is_authenticated:
+            return NotAuthenticatedError().to_response()
+
+        user = request.user
+
+        if user.avatar:
+            user.avatar.delete(save=False)
+            user.avatar = None
+            user.save(update_fields=["avatar"])
 
         return 200, UserSchema.from_user(user)
 

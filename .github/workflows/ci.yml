@@ -1,18 +1,19 @@
 name: CI
 
-# Enable Buildkit and let compose use it to speed up image building
 env:
   DOCKER_BUILDKIT: 1
   COMPOSE_DOCKER_CLI_BUILD: 1
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/stud-insight/backend_django
 
 on:
   pull_request:
-    branches: ['main']
-    paths-ignore: ['docs/**']
-
+    branches: [master]
+    paths-ignore: [docs/**]
   push:
-    branches: ['main']
-    paths-ignore: ['docs/**']
+    branches: [master]
+    tags: [v*]
+    paths-ignore: [docs/**]
 
 concurrency:
   group: ${{ github.head_ref || github.run_id }}
@@ -22,59 +23,71 @@ jobs:
   linter:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code Repository
-        uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version-file: '.python-version'
-      # Consider using pre-commit.ci for open source project
-      - name: Run pre-commit
-        uses: pre-commit/action@v3.0.1
+          python-version-file: .python-version
+      - uses: pre-commit/action@v3.0.1
 
-  # With no caching at all the entire ci process takes 3m to complete!
   pytest:
     runs-on: ubuntu-latest
-
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: test_db
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U test_user"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
     steps:
-      - name: Checkout Code Repository
-        uses: actions/checkout@v6
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and cache local backend
-        uses: docker/bake-action@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          push: false
-          load: true
-          files: docker-compose.local.yml
-          targets: django
-          set: |
-            django.cache-from=type=gha,scope=django-cached-tests
-            django.cache-to=type=gha,scope=django-cached-tests,mode=max
-            postgres.cache-from=type=gha,scope=postgres-cached-tests
-            postgres.cache-to=type=gha,scope=postgres-cached-tests,mode=max
+          python-version-file: .python-version
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --locked
+      - run: uv run pytest --tb=short -q
+        env:
+          DATABASE_URL: postgres://test_user:test_pass@localhost:5432/test_db
+          REDIS_URL: redis://localhost:6379/0
+          DJANGO_SETTINGS_MODULE: config.settings.test
 
-      - name: Build and cache docs
-        uses: docker/bake-action@v6
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: pytest
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
         with:
-          push: false
-          load: true
-          files: docker-compose.docs.yml
-          set: |
-            docs.cache-from=type=gha,scope=cached-docs
-            docs.cache-to=type=gha,scope=cached-docs,mode=max
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check DB Migrations
-        run: docker compose -f docker-compose.local.yml run --rm django python manage.py makemigrations --check
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Run DB Migrations
-        run: docker compose -f docker-compose.local.yml run --rm django python manage.py migrate
-
-      - name: Run Django Tests
-        run: docker compose -f docker-compose.local.yml run django pytest
-
-      - name: Tear down the Stack
-        run: docker compose -f docker-compose.local.yml down
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./compose/production/django/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

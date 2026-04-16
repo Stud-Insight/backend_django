@@ -292,6 +292,11 @@ class TERDashboardController(BaseAPI):
 
         user = request.user
 
+        cache_key = f"ter_student_dashboard_{user.id}_{ter_period_id or 'default'}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return 200, cached
+
         # Find period
         if ter_period_id:
             period = get_object_or_404(TERPeriod, id=ter_period_id)
@@ -302,7 +307,7 @@ class TERDashboardController(BaseAPI):
             ).first()
 
         if not period:
-            return 200, StudentDashboardSchema(
+            empty = StudentDashboardSchema(
                 ter_period_id=None,
                 ter_period_name=None,
                 status="no_period",
@@ -312,6 +317,8 @@ class TERDashboardController(BaseAPI):
                 subject_title=None,
                 subject_id=None,
             )
+            cache.set(cache_key, empty, DASHBOARD_CACHE_TTL)
+            return 200, empty
 
         # Find group
         group = Group.objects.filter(
@@ -332,7 +339,7 @@ class TERDashboardController(BaseAPI):
         # Compute phase
         phase = compute_phase(period)
 
-        return 200, StudentDashboardSchema(
+        result = StudentDashboardSchema(
             ter_period_id=period.id,
             ter_period_name=period.name,
             status=status,
@@ -342,6 +349,8 @@ class TERDashboardController(BaseAPI):
             subject_title=group.assigned_subject.title if group and group.assigned_subject else None,
             subject_id=group.assigned_subject_id if group and group.assigned_subject_id else None,
         )
+        cache.set(cache_key, result, DASHBOARD_CACHE_TTL)
+        return 200, result
 
     # ==================== 12-5: Admin System-Wide Stats ====================
 

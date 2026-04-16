@@ -95,6 +95,7 @@ class UserSchema(Schema):
     first_name: str
     last_name: str
     email: str
+    avatar: str | None = None
     groups: list[GroupSchema]
     is_staff: bool
     is_superuser: bool
@@ -102,6 +103,8 @@ class UserSchema(Schema):
     @staticmethod
     def from_user(user: "User") -> "UserSchema":
         """Create schema from User model."""
+        from django.conf import settings
+
         groups_with_perms = []
         for group in user.groups.prefetch_related("permissions").all():
             groups_with_perms.append(
@@ -110,11 +113,42 @@ class UserSchema(Schema):
                     permissions=[p.codename for p in group.permissions.all()],
                 )
             )
+
+        avatar_url = None
+        if user.avatar:
+            if getattr(settings, "USE_S3_STORAGE", False):
+                public_url = getattr(settings, "AWS_S3_PUBLIC_URL", None)
+                if public_url:
+                    import boto3
+                    from botocore.config import Config
+
+                    s3_client = boto3.client(
+                        "s3",
+                        endpoint_url=public_url,
+                        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+                        region_name=getattr(settings, "AWS_S3_REGION_NAME", "us-east-1"),
+                        config=Config(signature_version="s3v4"),
+                    )
+                    avatar_url = s3_client.generate_presigned_url(
+                        "get_object",
+                        Params={
+                            "Bucket": settings.AWS_STORAGE_BUCKET_NAME,
+                            "Key": user.avatar.name,
+                        },
+                        ExpiresIn=3600,
+                    )
+                else:
+                    avatar_url = user.avatar.url
+            else:
+                avatar_url = user.avatar.url
+
         return UserSchema(
             id=user.id,
             first_name=user.first_name,
             last_name=user.last_name,
             email=user.email,
+            avatar=avatar_url,
             groups=groups_with_perms,
             is_staff=user.is_staff,
             is_superuser=user.is_superuser,

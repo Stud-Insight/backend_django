@@ -80,18 +80,18 @@ class Command(BaseCommand):
         # Create TER periods
         today = date.today()
 
-        # Period 1: Open (current)
+        # Period 1: Open (current — en phase projet pour tester les livrables)
         ter_open = TERPeriod.objects.create(
             name="TER 2025-2026 S1",
             academic_year="2025-2026",
             status=PeriodStatus.OPEN,
-            group_formation_start=today - timedelta(days=10),
-            group_formation_end=today + timedelta(days=20),
-            subject_selection_start=today + timedelta(days=21),
-            subject_selection_end=today + timedelta(days=50),
-            assignment_date=today + timedelta(days=55),
-            project_start=today + timedelta(days=60),
-            project_end=today + timedelta(days=180),
+            group_formation_start=today - timedelta(days=90),
+            group_formation_end=today - timedelta(days=60),
+            subject_selection_start=today - timedelta(days=59),
+            subject_selection_end=today - timedelta(days=40),
+            assignment_date=today - timedelta(days=35),
+            project_start=today - timedelta(days=30),
+            project_end=today + timedelta(days=90),
             min_group_size=2,
             max_group_size=4,
         )
